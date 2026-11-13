@@ -48,30 +48,30 @@ const BOOKING_TYPE_DISPLAY_MAP = {
 
 export const SEGMENT_DEFINITIONS = [
   {
-    baseName: "Prime Players",
+    baseName: "High-Value Players",
     description:
       "Highly valuable players with strong booking frequency and revenue contribution.",
     recommendedAction:
       "Prioritize retention, loyalty benefits, priority booking, and membership offers.",
   },
   {
-    baseName: "Routine Players",
+    baseName: "Regular Players",
     description:
-      "Consistent players with relatively high booking frequency and stable revenue contribution, representing reliable but lower-value customers compared to Prime Players.",
+      "Consistent players with relatively high booking frequency and stable revenue contribution, representing reliable but lower-value customers compared to High-Value Players.",
     recommendedAction:
-      "Maintain with routine booking packages, membership upgrades, and consistent engagement offers.",
+      "Maintain with regular booking packages, membership upgrades, and consistent engagement offers.",
   },
   {
-    baseName: "Growth Players",
+    baseName: "Occasional Players",
     description:
-      "Players with potential to increase booking frequency and revenue contribution.",
+      "Players who are still reasonably recent but book infrequently, so their habit and value have not yet developed.",
     recommendedAction:
       "Target with follow-up promotions, bundles, repeat-booking nudges, and conversion campaigns.",
   },
   {
-    baseName: "Re-Engagement Players",
+    baseName: "Lapsed Players",
     description:
-      "Players with low recent activity who require re-engagement or low-touch awareness campaigns.",
+      "Players who have not booked recently or whose recency score is low, and who require reactivation or low-touch awareness campaigns.",
     recommendedAction:
       "Target with reactivation campaigns, general awareness campaigns, and selective follow-up based on historical value.",
   },
@@ -437,29 +437,60 @@ const assignRfmScores = (customers) => {
   return customers
 }
 
+const FEATURE_KEYS = ["recency", "frequency", "monetary"]
+const FEATURE_WINSOR_LOWER = 0.01
+const FEATURE_WINSOR_UPPER = 0.99
+
+const quantileValue = (sortedValues, fraction) => {
+  if (!sortedValues.length) return 0
+  const index = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.ceil(sortedValues.length * fraction) - 1)
+  )
+  return sortedValues[index]
+}
+
+// RFM data is heavily right-skewed: a single academy account can have hundreds
+// of bookings while most customers have a handful. Log-transform plus
+// winsorization keeps those extreme but legitimate customers in the model
+// without letting them form singleton clusters that distort the whole view.
+const robustScaleValues = (values) => {
+  const transformedValues = values.map((value) =>
+    Math.log1p(Math.max(0, Number(value) || 0))
+  )
+  const sortedValues = [...transformedValues].sort((left, right) => left - right)
+  const lowerBound = quantileValue(sortedValues, FEATURE_WINSOR_LOWER)
+  const upperBound = quantileValue(sortedValues, FEATURE_WINSOR_UPPER)
+  const winsorizedValues = transformedValues.map((value) =>
+    Math.min(Math.max(value, lowerBound), upperBound)
+  )
+
+  const mean =
+    winsorizedValues.reduce((total, value) => total + value, 0) /
+    (winsorizedValues.length || 1)
+  const variance =
+    winsorizedValues.reduce((total, value) => total + (value - mean) ** 2, 0) /
+    (winsorizedValues.length || 1)
+  const standardDeviation = Math.sqrt(variance)
+
+  return winsorizedValues.map((value) =>
+    standardDeviation ? (value - mean) / standardDeviation : 0
+  )
+}
+
 const zScoreScale = (customers) => {
-  const featureKeys = ["recency", "frequency", "monetary"]
-  const means = {}
-  const standardDeviations = {}
+  const scaledByFeature = Object.fromEntries(
+    FEATURE_KEYS.map((featureKey) => [
+      featureKey,
+      robustScaleValues(customers.map((customer) => customer[featureKey])),
+    ])
+  )
 
-  featureKeys.forEach((featureKey) => {
-    const values = customers.map((customer) => customer[featureKey])
-    const mean = values.reduce((total, value) => total + value, 0) / (values.length || 1)
-    const variance =
-      values.reduce((total, value) => total + (value - mean) ** 2, 0) / (values.length || 1)
-    const standardDeviation = Math.sqrt(variance)
-
-    means[featureKey] = mean
-    standardDeviations[featureKey] = standardDeviation
-  })
-
-  return customers.map((customer) => ({
+  return customers.map((customer, customerIndex) => ({
     customer,
-    features: featureKeys.map((featureKey) => {
-      const standardDeviation = standardDeviations[featureKey]
-      if (!standardDeviation) return 0
-      return (customer[featureKey] - means[featureKey]) / standardDeviation
-    }),
+    features: FEATURE_KEYS.map(
+      (featureKey) => scaledByFeature[featureKey][customerIndex]
+    ),
   }))
 }
 
@@ -965,12 +996,16 @@ const buildKEvaluationPayload = ({ evaluation, selectedK, selectionReason }) => 
   selectionReason,
 })
 
-const buildClusterProfiles = (customers) => {
-  const clusters = new Map()
+const SEGMENT_INDEX_BY_NAME = new Map(
+  SEGMENT_DEFINITIONS.map((definition, index) => [definition.baseName, index])
+)
+
+const buildBusinessSegmentProfiles = (customers) => {
+  const segments = new Map()
 
   customers.forEach((customer) => {
-    const profile = clusters.get(customer.clusterId) || {
-      clusterId: customer.clusterId,
+    const profile = segments.get(customer.segmentName) || {
+      segmentName: customer.segmentName,
       customerCount: 0,
       totalRecency: 0,
       totalFrequency: 0,
@@ -988,114 +1023,78 @@ const buildClusterProfiles = (customers) => {
     profile.totalFScore += customer.fScore
     profile.totalMScore += customer.mScore
 
-    clusters.set(customer.clusterId, profile)
+    segments.set(customer.segmentName, profile)
   })
 
-  const sortedProfiles = [...clusters.values()]
-    .map((profile) => ({
-      clusterId: profile.clusterId,
-      customerCount: profile.customerCount,
-      avgRecency: roundNumber(profile.totalRecency / profile.customerCount),
-      avgFrequency: roundNumber(profile.totalFrequency / profile.customerCount),
-      avgMonetary: roundNumber(profile.totalMonetary / profile.customerCount),
-      avgRScore: roundNumber(profile.totalRScore / profile.customerCount, 4),
-      avgFScore: roundNumber(profile.totalFScore / profile.customerCount, 4),
-      avgMScore: roundNumber(profile.totalMScore / profile.customerCount, 4),
-      combinedScore: roundNumber(
-        (profile.totalRScore + profile.totalFScore + profile.totalMScore) / profile.customerCount,
-        4
-      ),
-    }))
-    .sort((left, right) => {
-      if (right.combinedScore !== left.combinedScore) {
-        return right.combinedScore - left.combinedScore
+  return [...segments.values()]
+    .map((profile) => {
+      const definition = SEGMENT_DEFINITION_BY_NAME.get(profile.segmentName)
+
+      return {
+        clusterId: SEGMENT_INDEX_BY_NAME.get(profile.segmentName) ?? 0,
+        segmentName: profile.segmentName,
+        segmentDescription: definition?.description || null,
+        labelReason: definition
+          ? buildLabelReason(
+              {
+                avgRecency: roundNumber(profile.totalRecency / profile.customerCount),
+                avgFrequency: roundNumber(profile.totalFrequency / profile.customerCount),
+                avgMonetary: roundNumber(profile.totalMonetary / profile.customerCount),
+                avgRScore: roundNumber(profile.totalRScore / profile.customerCount, 4),
+                avgFScore: roundNumber(profile.totalFScore / profile.customerCount, 4),
+                avgMScore: roundNumber(profile.totalMScore / profile.customerCount, 4),
+              },
+              definition,
+              profile.segmentName
+            )
+          : null,
+        customerCount: profile.customerCount,
+        avgRecency: roundNumber(profile.totalRecency / profile.customerCount),
+        avgFrequency: roundNumber(profile.totalFrequency / profile.customerCount),
+        avgMonetary: roundNumber(profile.totalMonetary / profile.customerCount),
+        avgRScore: roundNumber(profile.totalRScore / profile.customerCount, 4),
+        avgFScore: roundNumber(profile.totalFScore / profile.customerCount, 4),
+        avgMScore: roundNumber(profile.totalMScore / profile.customerCount, 4),
       }
-      if (left.avgRecency !== right.avgRecency) {
-        return left.avgRecency - right.avgRecency
-      }
-      if (left.avgFrequency !== right.avgFrequency) {
-        return right.avgFrequency - left.avgFrequency
-      }
-      if (left.avgMonetary !== right.avgMonetary) {
-        return right.avgMonetary - left.avgMonetary
-      }
-      return left.clusterId - right.clusterId
     })
-
-  const clusterIdRemap = new Map(
-    sortedProfiles.map((profile, index) => [profile.clusterId, index])
-  )
-
-  customers.forEach((customer) => {
-    customer.clusterId = clusterIdRemap.get(customer.clusterId)
-  })
-
-  return sortedProfiles.map((profile) => ({
-    ...profile,
-    clusterId: clusterIdRemap.get(profile.clusterId),
-  }))
+    .sort((left, right) => left.clusterId - right.clusterId)
 }
 
-const getRangeMatchScore = (value, minimum, maximum, weight) => {
-  if (value >= minimum && value <= maximum) {
-    return weight * 2
+// Business thresholds are intentionally explicit so the segment mix can be
+// audited and adjusted without changing the K-Means implementation.
+const PRIME_MIN_FREQUENCY = 10
+const SEGMENT_RECENCY_WINDOW_DAYS = 730
+
+// Business labels are assigned per customer rather than per K-Means cluster.
+// This keeps the segment definition stable even when one extreme account forms
+// its own cluster, and it makes the card counts match the customer table.
+const assignBusinessSegmentName = (customer) => {
+  if (
+    customer.rScore >= 4 &&
+    customer.fScore >= 4 &&
+    customer.mScore >= 4 &&
+    customer.frequency >= PRIME_MIN_FREQUENCY
+  ) {
+    return "High-Value Players"
   }
 
-  const distance = value < minimum ? minimum - value : value - maximum
-  return weight * 2 - distance * weight * 2
-}
-
-const scorePrimePlayers = (profile) =>
-  getRangeMatchScore(profile.avgRScore, 4, 5, 3) +
-  getRangeMatchScore(profile.avgFScore, 4, 5, 3) +
-  getRangeMatchScore(profile.avgMScore, 4, 5, 3)
-
-const scoreRoutinePlayers = (profile) =>
-  getRangeMatchScore(profile.avgRScore, 3, 5, 2.5) +
-  getRangeMatchScore(profile.avgFScore, 4, 5, 3) +
-  getRangeMatchScore(profile.avgMScore, 3, 5, 2)
-
-const scoreGrowthPlayers = (profile) =>
-  getRangeMatchScore(profile.avgRScore, 4, 5, 3) +
-  getRangeMatchScore(profile.avgFScore, 1, 3.5, 2.5) +
-  getRangeMatchScore(profile.avgMScore, 1, 3.5, 2)
-
-const scoreReEngagementPlayers = (profile) =>
-  getRangeMatchScore(profile.avgRScore, 1, 2.5, 3) +
-  getRangeMatchScore(profile.avgFScore, 1, 3.5, 2.25) +
-  getRangeMatchScore(profile.avgMScore, 1, 3.5, 2.25) +
-  Math.max(0, profile.avgRecency - 14) * 0.05
-
-const getSegmentMatchScore = (profile, baseName) => {
-  switch (baseName) {
-    case "Prime Players":
-      return scorePrimePlayers(profile)
-    case "Routine Players":
-      return scoreRoutinePlayers(profile)
-    case "Growth Players":
-      return scoreGrowthPlayers(profile)
-    case "Re-Engagement Players":
-      return scoreReEngagementPlayers(profile)
-    default:
-      return Number.NEGATIVE_INFINITY
+  if (
+    customer.fScore >= 4 &&
+    customer.rScore >= 3 &&
+    customer.mScore >= 3 &&
+    customer.recency <= SEGMENT_RECENCY_WINDOW_DAYS
+  ) {
+    return "Regular Players"
   }
-}
 
-const buildPermutationAssignments = (definitions, targetLength) => {
-  if (targetLength === 0) return [[]]
+  if (
+    customer.rScore <= 2 ||
+    customer.recency > SEGMENT_RECENCY_WINDOW_DAYS
+  ) {
+    return "Lapsed Players"
+  }
 
-  const assignments = []
-
-  definitions.forEach((definition, index) => {
-    const remainingDefinitions = [...definitions.slice(0, index), ...definitions.slice(index + 1)]
-    const childAssignments = buildPermutationAssignments(remainingDefinitions, targetLength - 1)
-
-    childAssignments.forEach((childAssignment) => {
-      assignments.push([definition, ...childAssignment])
-    })
-  })
-
-  return assignments
+  return "Occasional Players"
 }
 
 const buildLabelReason = (profile, definition, segmentName) => {
@@ -1103,83 +1102,17 @@ const buildLabelReason = (profile, definition, segmentName) => {
   const metricSummary = `with average recency ${profile.avgRecency} days, frequency ${profile.avgFrequency}, and monetary ${profile.avgMonetary}`
 
   switch (definition.baseName) {
-    case "Prime Players":
-      return `${scoreSummary}, indicating high recency, high frequency, and high monetary value ${metricSummary}. This cluster represents the highest-value customers and is a retention priority. ${definition.recommendedAction}`
-    case "Routine Players":
-      return `${scoreSummary}, showing relatively high booking frequency with stable medium value ${metricSummary}. This cluster contributes stable revenue but has lower overall value than Prime Players, making it a maintenance or upgrade opportunity. ${definition.recommendedAction}`
-    case "Growth Players":
-      return `${scoreSummary}, showing recent or relatively active behavior but still lower frequency and monetary value ${metricSummary}. This cluster has growth potential through repeat-booking and value expansion campaigns. ${definition.recommendedAction}`
-    case "Re-Engagement Players":
-      return `${scoreSummary}, showing low recency score or high absolute recency ${metricSummary}. This cluster has lower recent activity and is best handled through an efficient re-engagement approach, whether the customers are historically valuable or generally low activity. ${definition.recommendedAction}`
+    case "High-Value Players":
+      return `${scoreSummary}, indicating high recency, high frequency, and high monetary value ${metricSummary}. This segment represents the highest-value customers and is a retention priority. ${definition.recommendedAction}`
+    case "Regular Players":
+      return `${scoreSummary}, showing relatively high booking frequency with stable medium value ${metricSummary}. This segment contributes stable revenue but has lower overall value than High-Value Players, making it a maintenance or upgrade opportunity. ${definition.recommendedAction}`
+    case "Occasional Players":
+      return `${scoreSummary}, showing recent or relatively active behavior but still lower frequency and monetary value ${metricSummary}. This segment has growth potential through repeat-booking and value expansion campaigns. ${definition.recommendedAction}`
+    case "Lapsed Players":
+      return `${scoreSummary}, showing low recency score or high absolute recency ${metricSummary}. This segment has lower recent activity and is best handled through an efficient re-engagement approach, whether the customers are historically valuable or generally low activity. ${definition.recommendedAction}`
     default:
-      return `${segmentName} was assigned based on the cluster's RFM profile ${metricSummary}.`
+      return `${segmentName} was assigned based on the customer's RFM profile ${metricSummary}.`
   }
-}
-
-/*
-  Segment names are not arbitrary and are never assigned directly from clusterId.
-  Each cluster is profiled first with normalized R/F/M scores plus absolute recency,
-  then matched to the most appropriate business segment based on customer behavior.
-  Each segment name is tied to a business action, and kEvaluation is stored only as
-  validation evidence. selectedK is the production K, while bestSilhouetteK/optimalK
-  remain analytical evidence rather than the business-facing segment count.
-
-  IMPORTANT: Cluster IDs are NOT directly mapped to business segment importance.
-  After buildClusterProfiles remaps IDs by combinedScore, assignSegmentLabels uses
-  permutation-based exhaustive search (K! = 24 permutations for K=4) to find the
-  mapping that maximizes total range-match score across all segments. This means
-  clusterId=0 (highest combinedScore) does NOT always receive "Prime Players" —
-  the assignment depends on which permutation best fits each cluster's specific
-  R/F/M profile against the segment scoring criteria.
-*/
-/**
- * Assigns business segment names to clusters using permutation-based exhaustive search.
- *
- * For K clusters, generates K! permutations of segment definitions and selects the
- * mapping that maximizes the total range-match score. Each segment has specific
- * R/F/M score criteria (e.g., Prime requires R≥4, F≥4, M≥4; Re-Engagement requires
- * R≤2.5, F≤3.5, M≤3.5). The permutation approach ensures labels are assigned based
- * on business criteria rather than cluster ID ordering.
- */
-const assignSegmentLabels = (clusterProfiles) => {
-  if (!clusterProfiles.length) return new Map()
-
-  const candidateAssignments = buildPermutationAssignments(
-    SEGMENT_DEFINITIONS,
-    clusterProfiles.length
-  )
-
-  let selectedAssignment = candidateAssignments[0]
-  let highestTotalScore = Number.NEGATIVE_INFINITY
-
-  candidateAssignments.forEach((candidateAssignment) => {
-    const totalScore = candidateAssignment.reduce(
-      (total, definition, index) =>
-        total + getSegmentMatchScore(clusterProfiles[index], definition.baseName),
-      0
-    )
-
-    if (totalScore > highestTotalScore) {
-      highestTotalScore = totalScore
-      selectedAssignment = candidateAssignment
-    }
-  })
-
-  return new Map(
-    clusterProfiles.map((profile, index) => {
-      const definition = selectedAssignment[index]
-      return [
-        profile.clusterId,
-        {
-          segmentName: definition.baseName,
-          segmentDescription: definition.description,
-          recommendedAction: definition.recommendedAction,
-          labelReason: buildLabelReason(profile, definition, definition.baseName),
-          matchScore: getSegmentMatchScore(profile, definition.baseName),
-        },
-      ]
-    })
-  )
 }
 
 const serializeRun = (run) => {
@@ -1524,38 +1457,11 @@ export const runRfmSegmentation = async (
           centroids: selectedClusteringResult.centroids,
         })
 
-        clusterProfiles = buildClusterProfiles(customers)
-
-        const labelByClusterId = assignSegmentLabels(clusterProfiles)
-
         customers.forEach((customer) => {
-          customer.segmentName =
-          customer.clusterFit === "mixed_borderline"
-            ? "Mixed / Borderline"
-            :             labelByClusterId.get(customer.clusterId)?.segmentName || "Growth Players"
+          customer.segmentName = assignBusinessSegmentName(customer)
         })
 
-        clusterProfiles = clusterProfiles.map((profile) => {
-          const labelInfo = labelByClusterId.get(profile.clusterId)
-
-          return {
-            clusterId: profile.clusterId,
-            segmentName: labelInfo?.segmentName || "Growth Players",
-            segmentDescription:
-              labelInfo?.segmentDescription ||
-              SEGMENT_DEFINITION_BY_NAME.get("Growth Players").description,
-            labelReason:
-              labelInfo?.labelReason ||
-              "This cluster was mapped to Growth Players based on its normalized RFM profile.",
-            customerCount: profile.customerCount,
-            avgRecency: profile.avgRecency,
-            avgFrequency: profile.avgFrequency,
-            avgMonetary: profile.avgMonetary,
-            avgRScore: profile.avgRScore,
-            avgFScore: profile.avgFScore,
-            avgMScore: profile.avgMScore,
-          }
-        })
+        clusterProfiles = buildBusinessSegmentProfiles(customers)
       }
     }
 

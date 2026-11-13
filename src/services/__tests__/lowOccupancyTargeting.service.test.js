@@ -107,7 +107,7 @@ test("buildTargetPriorityScore favors better session match, recency, and contact
     selectedCourtBookingCount: 8,
     totalBookingCount: 10,
     recencyDays: 14,
-    rfmSegmentName: "Prime Players",
+    rfmSegmentName: "High-Value Players",
     hasPhone: true,
     hasEmail: true,
     maxSelectedSessionBookingCount: 8,
@@ -119,7 +119,7 @@ test("buildTargetPriorityScore favors better session match, recency, and contact
     selectedCourtBookingCount: 1,
     totalBookingCount: 3,
     recencyDays: 240,
-    rfmSegmentName: "Re-Engagement Players",
+    rfmSegmentName: "Lapsed Players",
     hasPhone: false,
     hasEmail: false,
     maxSelectedSessionBookingCount: 8,
@@ -136,7 +136,7 @@ test("buildSuggestedAction follows business targeting rules", () => {
   assert.equal(
     buildSuggestedAction({
       customerTypeLabel: "Non Membership",
-      rfmSegmentName: "Routine Players",
+      rfmSegmentName: "Regular Players",
     }),
     "Offer session promo or repeat booking package."
   )
@@ -144,7 +144,7 @@ test("buildSuggestedAction follows business targeting rules", () => {
   assert.equal(
     buildSuggestedAction({
       customerTypeLabel: "Membership",
-      rfmSegmentName: "Routine Players",
+      rfmSegmentName: "Regular Players",
     }),
     "Offer priority slot reminder or membership package maintenance."
   )
@@ -152,7 +152,7 @@ test("buildSuggestedAction follows business targeting rules", () => {
   assert.equal(
     buildSuggestedAction({
       customerTypeLabel: "Membership",
-      rfmSegmentName: "Prime Players",
+      rfmSegmentName: "High-Value Players",
     }),
     "Give VIP priority slot access and personalized loyalty perks."
   )
@@ -163,7 +163,7 @@ test("buildWhatsappMessage personalizes by segment, preferred session, and booki
     customerName: "Andi",
     preferredSession: "Morning",
     courtType: "mini_soccer",
-    rfmSegmentName: "Prime Players",
+    rfmSegmentName: "High-Value Players",
     customerTypeLabel: "Membership",
     totalBookingCount: 12,
     recencyDays: 5,
@@ -173,7 +173,7 @@ test("buildWhatsappMessage personalizes by segment, preferred session, and booki
     customerName: "Budi",
     preferredSession: "Night",
     courtType: "basketball",
-    rfmSegmentName: "Re-Engagement Players",
+    rfmSegmentName: "Lapsed Players",
     customerTypeLabel: "Non Membership",
     totalBookingCount: 2,
     recencyDays: 200,

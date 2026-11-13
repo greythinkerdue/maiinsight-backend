@@ -13,10 +13,10 @@ const sharedSegmentSource = fs.readFileSync(
 );
 
 const CANONICAL_SEGMENT_NAMES = [
-  "Prime Players",
-  "Routine Players",
-  "Growth Players",
-  "Re-Engagement Players",
+  "High-Value Players",
+  "Regular Players",
+  "Occasional Players",
+  "Lapsed Players",
 ];
 
 test("Management report imports the shared segmentation summary service", () => {

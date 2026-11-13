@@ -32,7 +32,7 @@ const context = (overrides = {}) => ({
 
 const validResult = (overrides = {}) => ({
   targetSegmentKey: "re_engagement",
-  targetSegmentLabel: "Re-Engagement Players",
+  targetSegmentLabel: "Lapsed Players",
   targetVenueKey: "mini_soccer",
   targetVenueLabel: "Mini Soccer",
   targetSessionKey: "night",
@@ -102,12 +102,12 @@ test("prompt requires concise English and compact structured output", () => {
   assert.match(prompt, /Do not repeat/)
   assert.match(prompt, /offer redemption/)
   assert.match(prompt, /selected segment \+ campaign objective/i)
-  assert.match(prompt, /Routine: increase customer value and revenue per visit/i)
+  assert.match(prompt, /Regular: increase customer value and revenue per visit/i)
   assert.match(prompt, /Photographer, Premium Ball, Match Highlight Video, and Referee Package/i)
   assert.match(prompt, /boost_social_media_conversion[\s\S]*Photographer or Match Highlight Video/i)
   assert.match(prompt, /drive_revenue_growth[\s\S]*allowed premium add-ons/i)
   assert.match(prompt, /maximize_off_peak_occupancy[\s\S]*lowest-occupancy window/i)
-  assert.match(prompt, /Growth: next booking, recurring or weekly booking packages/i)
+  assert.match(prompt, /Occasional: next booking, recurring or weekly booking packages/i)
   assert.match(prompt, /Every General Strategy recommendation must use analysis_period/i)
   assert.match(prompt, /historical empty court hours, not future available slots/i)
   assert.match(prompt, /Quote at least two specific figures in offerReasoning and evidenceUsed/i)
@@ -271,7 +271,7 @@ test("membership and selected offer framework validation are enforced", () => {
   )
 })
 
-test("AI-recommended Routine strategy rejects membership and recurring offers", () => {
+test("AI-recommended Regular strategy rejects membership and recurring offers", () => {
   const routineContext = {
     ...context({
       segmentKey: "routine",
@@ -281,7 +281,7 @@ test("AI-recommended Routine strategy rejects membership and recurring offers", 
   }
   const routineResult = {
     targetSegmentKey: "routine",
-    targetSegmentLabel: "Routine Players",
+    targetSegmentLabel: "Regular Players",
   }
 
   for (const recommendedOfferKey of [

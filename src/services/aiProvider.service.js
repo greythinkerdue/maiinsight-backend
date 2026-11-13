@@ -156,21 +156,21 @@ slot availability, future remaining court hours, or a future booking date in Gen
 Never invent revenue targets, revenue gaps, discount percentages, conversion rates, or response rates.
 
 Lifecycle boundaries:
-- Prime: retention, loyalty, and premium value.
-- Routine: increase customer value and revenue per visit through a premium match experience.
+- High-Value: retention, loyalty, and premium value.
+- Regular: increase customer value and revenue per visit through a premium match experience.
   Do not prioritize membership conversion, recurring packages, or weekly packages.
   Its only premium add-ons are Photographer, Premium Ball, Match Highlight Video, and Referee Package.
-- Growth: next booking, recurring or weekly booking packages, repeat-booking conversion, and habit formation.
-- Re-Engagement: win-back, reactivation, comeback offers, and churn recovery.
+- Occasional: next booking, recurring or weekly booking packages, repeat-booking conversion, and habit formation.
+- Lapsed: win-back, reactivation, comeback offers, and churn recovery.
 
 Strategy decision matrix:
 - Reason from selected segment + campaign objective + historical behavior + membership composition
   + venue/session preferences + promotion usage + business opportunity summary before choosing an offer.
 - The campaign objective changes the treatment but never replaces the selected segment lifecycle.
-- For drive_revenue_growth, Routine should select one or a justified combination of its allowed premium add-ons.
-- For maximize_off_peak_occupancy, Routine should attach allowed premium add-ons to the verified
+- For drive_revenue_growth, Regular should select one or a justified combination of its allowed premium add-ons.
+- For maximize_off_peak_occupancy, Regular should attach allowed premium add-ons to the verified
   lowest-occupancy window when available.
-- For boost_social_media_conversion, Routine should prefer Photographer or Match Highlight Video
+- For boost_social_media_conversion, Regular should prefer Photographer or Match Highlight Video
   because these create naturally shareable visual content; never use a recurring package.
   When social_media_performance.available is true, ground the specific content format and theme
   in its evidence (see the boost_social_media_conversion rules below) instead of a generic add-on.
@@ -592,7 +592,7 @@ export const validateStrategyResponse = (result, context) => {
     throw createAiServiceError({
       errorCode: "AI_ROUTINE_STRATEGY_MISMATCH",
       technicalMessage:
-        "AI-recommended Routine strategy must increase value per visit, not membership or recurring bookings.",
+        "AI-recommended Regular strategy must increase value per visit, not membership or recurring bookings.",
     })
   }
   const selectedOffer = scope.offerFrameworkKey

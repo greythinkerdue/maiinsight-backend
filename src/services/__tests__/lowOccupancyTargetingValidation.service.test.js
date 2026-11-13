@@ -22,7 +22,7 @@ test("validateRecommendedCustomersInput normalizes valid query params", () => {
       courtType: "mini_soccer",
       sessionName: "Morning",
       customerType: "non_membership",
-      segmentName: "Growth Players",
+      segmentName: "Occasional Players",
       limit: "25",
       offset: "5",
     }),
@@ -32,7 +32,7 @@ test("validateRecommendedCustomersInput normalizes valid query params", () => {
       courtType: "mini_soccer",
       sessionName: "Morning",
       customerType: "non_membership",
-      segmentName: "Growth Players",
+      segmentName: "Occasional Players",
       limit: 25,
       offset: 5,
     }

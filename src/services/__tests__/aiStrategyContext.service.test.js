@@ -66,7 +66,7 @@ test("selected segment history uses Customer.customerType and excludes internal 
   assert.equal(result.historicalPromotionUsageRate, 50)
 })
 
-test("membership opportunity follows configurable Routine-only rules", () => {
+test("membership opportunity follows configurable Regular-only rules", () => {
   assert.equal(buildMembershipOpportunity({
     segmentKey: "routine", membershipCount: 20, nonMembershipCount: 80,
     membershipSharePct: 20, nonMembershipSharePct: 80, averageFrequency: 3.8,

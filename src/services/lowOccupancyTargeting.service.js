@@ -24,10 +24,10 @@ const COURT_TYPE_LABELS = {
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 const RFM_SEGMENT_SCORE = {
-  "Prime Players": 100,
-  "Routine Players": 85,
-  "Growth Players": 70,
-  "Re-Engagement Players": 55,
+  "High-Value Players": 100,
+  "Regular Players": 85,
+  "Occasional Players": 70,
+  "Lapsed Players": 55,
 }
 
 const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== ""
@@ -292,23 +292,23 @@ export const buildTargetPriorityLabel = (score) => {
 }
 
 export const buildSuggestedAction = ({ customerTypeLabel, rfmSegmentName }) => {
-  if (rfmSegmentName === "Prime Players") {
+  if (rfmSegmentName === "High-Value Players") {
     return "Give VIP priority slot access and personalized loyalty perks."
   }
 
-  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Routine Players") {
+  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Regular Players") {
     return "Offer session promo or repeat booking package."
   }
 
-  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Growth Players") {
+  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Occasional Players") {
     return "Send follow-up promo to encourage repeat booking."
   }
 
-  if (customerTypeLabel === "Membership" && rfmSegmentName === "Routine Players") {
+  if (customerTypeLabel === "Membership" && rfmSegmentName === "Regular Players") {
     return "Offer priority slot reminder or membership package maintenance."
   }
 
-  if (rfmSegmentName === "Re-Engagement Players") {
+  if (rfmSegmentName === "Lapsed Players") {
     return "Send comeback offer or low-touch reactivation message."
   }
 
@@ -347,23 +347,23 @@ export const buildWhatsappMessage = ({
   const sessionPhrase = preferredSession ? `sesi ${preferredSession}` : "jadwal yang biasa Kakak pilih"
   const historyPhrase = buildBookingHistoryPhrase({ totalBookingCount, recencyDays })
 
-  if (rfmSegmentName === "Prime Players") {
+  if (rfmSegmentName === "High-Value Players") {
     return `Halo Kak ${safeName}, kami dari Maiin Gandaria. ${historyPhrase}, jadi kami mau kasih Kakak akses prioritas untuk slot ${courtLabel} di ${sessionPhrase}. Kabari kami ya kalau mau kami bantu amankan jadwalnya duluan.`
   }
 
-  if (rfmSegmentName === "Re-Engagement Players") {
+  if (rfmSegmentName === "Lapsed Players") {
     return `Halo Kak ${safeName}, kami dari Maiin Gandaria. ${historyPhrase}, kami kangen main bareng Kakak lagi. Saat ini ada slot ${courtLabel} tersedia di ${sessionPhrase}. Yuk balik main bareng tim, kami siapin promo comeback khusus buat Kakak.`
   }
 
-  if (customerTypeLabel === "Membership" && rfmSegmentName === "Routine Players") {
+  if (customerTypeLabel === "Membership" && rfmSegmentName === "Regular Players") {
     return `Halo Kak ${safeName}, kami dari Maiin Gandaria. ${historyPhrase} di ${sessionPhrase}. Sebagai member rutin, kami mau ingetin ada slot ${courtLabel} yang bisa Kakak amankan lagi sesuai jadwal favorit.`
   }
 
-  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Growth Players") {
+  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Occasional Players") {
     return `Halo Kak ${safeName}, kami dari Maiin Gandaria. ${historyPhrase} di ${sessionPhrase}. Ada slot ${courtLabel} tersedia, plus promo khusus kalau Kakak booking lagi.`
   }
 
-  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Routine Players") {
+  if (customerTypeLabel === "Non Membership" && rfmSegmentName === "Regular Players") {
     return `Halo Kak ${safeName}, kami dari Maiin Gandaria. ${historyPhrase} di ${sessionPhrase}. Ada paket booking berulang yang bisa bikin Kakak lebih hemat kalau mau main rutin di sesi ini.`
   }
 

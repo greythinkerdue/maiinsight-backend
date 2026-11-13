@@ -148,15 +148,15 @@ export const buildMembershipOpportunity = ({
 
   let reason
   if (segmentKey !== "routine") {
-    reason = "Membership conversion is reserved for Routine Players unless another explicit business rule applies."
+    reason = "Membership conversion is reserved for Regular Players unless another explicit business rule applies."
   } else if (nonMembershipSharePct == null || averageFrequency == null) {
     reason = "Membership composition or booking frequency is unavailable."
   } else if (nonMembershipSharePct < MEMBERSHIP_OPPORTUNITY_RULE.minimumNonMembershipSharePct) {
-    reason = "Most eligible Routine Players are already members, so recurring or loyalty value is a better fit."
+    reason = "Most eligible Regular Players are already members, so recurring or loyalty value is a better fit."
   } else if (averageFrequency < MEMBERSHIP_OPPORTUNITY_RULE.minimumAverageFrequency) {
-    reason = "Routine Players do not yet meet the minimum repeat-booking frequency for membership conversion."
+    reason = "Regular Players do not yet meet the minimum repeat-booking frequency for membership conversion."
   } else {
-    reason = "Most Routine Players are non-members and already demonstrate repeat-booking behavior."
+    reason = "Most Regular Players are non-members and already demonstrate repeat-booking behavior."
   }
 
   return {

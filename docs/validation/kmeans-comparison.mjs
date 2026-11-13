@@ -195,10 +195,10 @@ const runKMeans = (points, k, initStrategy, seed = 42) => {
 // ────────────────────────────────────────────────────────────
 // 6. Synthetic RFM Dataset Generator
 //    Creates 4 realistic customer clusters:
-//    - Prime:       high F, high M, low R  (small group, ~8%)
-//    - Routine:     med F,  med M,  med R  (large group, ~35%)
-//    - Growth:      low F,  low M,  low R  (medium group, ~30%)
-//    - Re-Engagement: any F, low M,  high R (medium group, ~27%)
+//    - High-Value:    high F, high M, low R  (small group, ~8%)
+//    - Regular:       med F,  med M,  med R  (large group, ~35%)
+//    - Occasional:    low F,  low M,  low R  (medium group, ~30%)
+//    - Lapsed:        any F, low M,  high R (medium group, ~27%)
 // ────────────────────────────────────────────────────────────
 const generateDataset = (count = 300, seed = 99) => {
   const rand = createSeededRandom(seed)
@@ -216,10 +216,10 @@ const generateDataset = (count = 300, seed = 99) => {
 
   // Cluster definitions: [recencyCenter, frequencyCenter, monetaryCenter, count, label]
   const clusters = [
-    [15, 45, 850000, Math.round(count * 0.08), "Prime"],
-    [45, 25, 400000, Math.round(count * 0.35), "Routine"],
-    [30, 10, 150000, Math.round(count * 0.30), "Growth"],
-    [120, 8, 100000, Math.round(count * 0.27), "Re-Engagement"],
+    [15, 45, 850000, Math.round(count * 0.08), "High-Value"],
+    [45, 25, 400000, Math.round(count * 0.35), "Regular"],
+    [30, 10, 150000, Math.round(count * 0.30), "Occasional"],
+    [120, 8, 100000, Math.round(count * 0.27), "Lapsed"],
   ]
 
   clusters.forEach(([rCenter, fCenter, mCenter, n, label]) => {
@@ -267,7 +267,7 @@ const assignRfmScores = (rows) => {
 // ────────────────────────────────────────────────────────────
 // 8. Segment Label Mapping  (clusterId → segment name)
 // ────────────────────────────────────────────────────────────
-const SEGMENT_NAMES = ["Prime Players", "Routine Players", "Growth Players", "Re-Engagement Players"]
+const SEGMENT_NAMES = ["High-Value Players", "Regular Players", "Occasional Players", "Lapsed Players"]
 
 const mapSegments = (profiles) => {
   const sorted = [...profiles].sort((a, b) => {
@@ -487,7 +487,7 @@ const computeSegmentProfile = (results) => {
     segment: segmentMap[p.clusterId] || "Unknown",
     ...p,
   })).sort((a, b) => {
-    const order = { "Prime Players": 0, "Routine Players": 1, "Growth Players": 2, "Re-Engagement Players": 3 }
+    const order = { "High-Value Players": 0, "Regular Players": 1, "Occasional Players": 2, "Lapsed Players": 3 }
     return (order[a.segment] ?? 99) - (order[b.segment] ?? 99)
   })
 }
@@ -583,10 +583,10 @@ const measureLabelAgreement = (results) => {
     const predicted = segMap[cid]
     const trueLabel = dataset[i].trueLabel
     if (
-      (predicted === "Prime Players" && trueLabel === "Prime") ||
-      (predicted === "Routine Players" && trueLabel === "Routine") ||
-      (predicted === "Growth Players" && trueLabel === "Growth") ||
-      (predicted === "Re-Engagement Players" && trueLabel === "Re-Engagement")
+      (predicted === "High-Value Players" && trueLabel === "High-Value") ||
+      (predicted === "Regular Players" && trueLabel === "Regular") ||
+      (predicted === "Occasional Players" && trueLabel === "Occasional") ||
+      (predicted === "Lapsed Players" && trueLabel === "Lapsed")
     ) correct++
   })
   return Number(((correct / dataset.length) * 100).toFixed(1))
@@ -648,8 +648,8 @@ console.log(`     The seeded PRNG ensures deterministic, reproducible results`)
 console.log(`     across repeated runs with the same dataset.`)
 console.log()
 console.log("  3. Business Interpretability:")
-console.log(`     Both methods produce 4 segments (Prime, Routine, Growth,`)
-console.log(`     Re-Engagement) with distinct RFM profiles.  K-Means++`)
+console.log(`     Both methods produce 4 segments (High-Value, Regular, Occasional,`)
+console.log(`     Lapsed) with distinct RFM profiles.  K-Means++`)
 console.log(`     maintains full compatibility with the existing segment`)
 console.log(`     labeling pipeline and database schema.`)
 console.log()

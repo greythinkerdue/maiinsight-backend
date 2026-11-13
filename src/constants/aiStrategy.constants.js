@@ -1,8 +1,8 @@
 export const CUSTOMER_SEGMENTS = {
-  PRIME: { key: "prime", label: "Prime Players" },
-  ROUTINE: { key: "routine", label: "Routine Players" },
-  GROWTH: { key: "growth", label: "Growth Players" },
-  RE_ENGAGEMENT: { key: "re_engagement", label: "Re-Engagement Players" },
+  PRIME: { key: "prime", label: "High-Value Players" },
+  ROUTINE: { key: "routine", label: "Regular Players" },
+  GROWTH: { key: "growth", label: "Occasional Players" },
+  RE_ENGAGEMENT: { key: "re_engagement", label: "Lapsed Players" },
 }
 
 export const CUSTOMER_SEGMENT_LIST = Object.values(CUSTOMER_SEGMENTS)

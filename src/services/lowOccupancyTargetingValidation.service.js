@@ -6,10 +6,10 @@ const ALLOWED_COURT_TYPES = new Set(["mini_soccer", "basketball", "all"])
 const ALLOWED_CUSTOMER_TYPES = new Set(["all", "membership", "non_membership"])
 const ALLOWED_SESSION_NAMES = new Set(["Morning", "Afternoon", "Evening", "Night"])
 const ALLOWED_SEGMENT_NAMES = new Set([
-  "Prime Players",
-  "Routine Players",
-  "Growth Players",
-  "Re-Engagement Players",
+  "High-Value Players",
+  "Regular Players",
+  "Occasional Players",
+  "Lapsed Players",
 ])
 const ALLOWED_CAMPAIGN_DAYS = new Set(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
 const ALLOWED_ANALYSIS_MONTHS = new Set([1, 2, 3, 4, 6, 12])
@@ -78,7 +78,7 @@ const normalizeSegmentName = (value) => {
   const normalized = String(value).trim()
   if (!ALLOWED_SEGMENT_NAMES.has(normalized)) {
     throw badRequest(
-      "segmentName must be Prime Players, Routine Players, Growth Players, Re-Engagement Players, or omitted."
+      "segmentName must be High-Value Players, Regular Players, Occasional Players, Lapsed Players, or omitted."
     )
   }
 

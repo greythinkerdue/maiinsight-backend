@@ -60,13 +60,13 @@ test("validateSegmentationCustomerInput applies safe pagination defaults", () =>
     includeCustomers: "true",
     limit: "25",
     offset: "10",
-    segmentName: "Prime Players",
+    segmentName: "High-Value Players",
   })
 
   assert.equal(input.includeCustomers, true)
   assert.equal(input.limit, 25)
   assert.equal(input.offset, 10)
-  assert.equal(input.segmentName, "Prime Players")
+  assert.equal(input.segmentName, "High-Value Players")
 })
 
 test("validateSegmentationCustomerInput rejects oversized page size", () => {

@@ -11,6 +11,6 @@ node docs/validation/kmeans-comparison.mjs
 ## Output
 
 - Tabel perbandingan Silhouette Score, Inertia, Iterations, Stability
-- Segmentasi bisnis (Prime, Routine, Growth, Re-Engagement)
+- Segmentasi bisnis (High-Value, Regular, Occasional, Lapsed)
 - Label agreement dengan ground truth
 - Evidence table untuk skripsi
