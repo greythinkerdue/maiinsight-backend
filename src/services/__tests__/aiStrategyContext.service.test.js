@@ -15,6 +15,7 @@ import {
 import { resolveAnalysisPeriodRange } from "../aiBusinessOpportunity.service.js"
 import {
   CUSTOMER_SEGMENTS,
+  resolveCustomerSegment,
   SEGMENT_STRATEGY_GUIDANCE,
 } from "../../constants/aiStrategy.constants.js"
 
@@ -398,4 +399,18 @@ test("client serialization trims server-only context fields", () => {
   })
   assert.equal(serializeStrategyContextForClient(null), null)
   assert.equal(serializeStrategyContextForClient(undefined), null)
+})
+
+test("legacy customer segment labels resolve to the current segments", () => {
+  const cases = [
+    ["Prime Players", "prime"],
+    ["Routine Players", "routine"],
+    ["Growth Players", "growth"],
+    ["Re-Engagement Players", "re_engagement"],
+    ["Reengagement Players", "re_engagement"],
+  ]
+
+  for (const [label, expectedKey] of cases) {
+    assert.equal(resolveCustomerSegment(label)?.key, expectedKey)
+  }
 })

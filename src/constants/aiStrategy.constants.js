@@ -15,13 +15,42 @@ export const normalizeKey = (value) =>
     .replace(/[\s-]+/g, "_")
     .replace(/[^a-z0-9_]/g, "")
 
-const SEGMENT_ALIASES = new Map(
-  CUSTOMER_SEGMENT_LIST.flatMap((segment) => [
+const LEGACY_SEGMENT_ALIASES = [
+  {
+    segment: CUSTOMER_SEGMENTS.PRIME,
+    labels: ["Prime Players", "Prime", "High Value Players", "High Value"],
+  },
+  {
+    segment: CUSTOMER_SEGMENTS.ROUTINE,
+    labels: ["Routine Players", "Routine"],
+  },
+  {
+    segment: CUSTOMER_SEGMENTS.GROWTH,
+    labels: ["Growth Players", "Growth"],
+  },
+  {
+    segment: CUSTOMER_SEGMENTS.RE_ENGAGEMENT,
+    labels: [
+      "Re-Engagement Players",
+      "Re-engagement Players",
+      "Reengagement Players",
+      "Re-Engagement",
+      "Re-engagement",
+      "Reengagement",
+    ],
+  },
+]
+
+const SEGMENT_ALIASES = new Map([
+  ...CUSTOMER_SEGMENT_LIST.flatMap((segment) => [
     [normalizeKey(segment.key), segment],
     [normalizeKey(segment.label), segment],
     [normalizeKey(segment.label.replace(/ players$/i, "")), segment],
-  ])
-)
+  ]),
+  ...LEGACY_SEGMENT_ALIASES.flatMap(({ segment, labels }) =>
+    labels.map((label) => [normalizeKey(label), segment])
+  ),
+])
 
 export const resolveCustomerSegment = (value) => SEGMENT_ALIASES.get(normalizeKey(value)) || null
 
