@@ -2,6 +2,7 @@ import { badRequest } from "../utils/http-error.js"
 
 const MAX_PAGE_SIZE = 500
 const DEFAULT_PAGE_SIZE = 100
+const MAX_RECENCY_FILTER_DAYS = 3650
 const ALLOWED_PERIOD_TYPES = new Set(["MTD", "YTD"])
 const BOOKING_TYPE_TOKENS = new Map([
   ["geloraapp booking", "GeloraApp Booking"],
@@ -122,6 +123,15 @@ const normalizeYear = (value) => {
   return year
 }
 
+const normalizeMaxRecencyDays = (value) => {
+  if (!hasValue(value)) return null
+
+  return normalizePositiveInteger(value, "maxRecencyDays", {
+    minimum: 1,
+    maximum: MAX_RECENCY_FILTER_DAYS,
+  })
+}
+
 const normalizeBookingType = (value) => {
   if (!hasValue(value)) return null
 
@@ -189,6 +199,7 @@ export const validateSegmentationLookupInput = (input = {}) => ({
   courtType: hasValue(input.courtType) ? String(input.courtType).trim() : undefined,
   customerType: hasValue(input.customerType) ? String(input.customerType).trim() : undefined,
   bookingType: normalizeBookingType(input.bookingType),
+  maxRecencyDays: normalizeMaxRecencyDays(input.maxRecencyDays),
   includeCustomers: normalizeBoolean(input.includeCustomers, false),
 })
 

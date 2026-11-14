@@ -51,6 +51,8 @@ segmentationRouter.post(
           selectionReason: result.selectionReason,
           clusters: result.clusters,
           summary: result.summary,
+          totalCustomers: result.totalCustomers,
+          unfilteredTotalCustomers: result.unfilteredTotalCustomers,
         },
       })
     } catch (error) {

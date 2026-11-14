@@ -55,6 +55,24 @@ test("validateSegmentationLookupInput accepts canonical numeric month", () => {
   assert.equal(input.periodType, "MTD")
 })
 
+test("validateSegmentationLookupInput normalizes last-visit recency filter", () => {
+  const input = validateSegmentationLookupInput({ maxRecencyDays: "365" })
+
+  assert.equal(input.maxRecencyDays, 365)
+})
+
+test("validateSegmentationLookupInput rejects invalid last-visit recency filter", () => {
+  assert.throws(
+    () => validateSegmentationLookupInput({ maxRecencyDays: "0" }),
+    /maxRecencyDays must be an integer greater than or equal to 1/
+  )
+
+  assert.throws(
+    () => validateSegmentationLookupInput({ maxRecencyDays: "3660" }),
+    /maxRecencyDays must be less than or equal to 3650/
+  )
+})
+
 test("validateSegmentationCustomerInput applies safe pagination defaults", () => {
   const input = validateSegmentationCustomerInput({
     includeCustomers: "true",

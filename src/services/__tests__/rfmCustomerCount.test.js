@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 
 import {
   aggregateCustomerMetrics,
+  applyRecencyStatsToClusterProfiles,
   countEligibleCanonicalCustomers,
 } from "../rfmSegmentation.service.js"
 
@@ -61,4 +62,56 @@ test("eligible customer count is a database count over canonical customers with 
   assert.ok(transactionWhere.AND.some(({ validBooking }) => validBooking === true))
   assert.ok(transactionWhere.AND.some(({ netRevenue }) => netRevenue?.gt === 0))
   assert.ok(transactionWhere.AND.some(({ customerKey }) => customerKey?.startsWith === "CUST-"))
+})
+
+test("recency-filtered profiles use reachable customer stats and keep every segment", () => {
+  const profiles = [
+    {
+      clusterId: 0,
+      segmentName: "High-Value Players",
+      customerCount: 10,
+      avgRecency: 100,
+      avgFrequency: 8,
+      avgMonetary: 800000,
+      avgRScore: 4.2,
+      avgFScore: 4.1,
+      avgMScore: 4.3,
+      labelReason: "Full-run label",
+    },
+    {
+      clusterId: 3,
+      segmentName: "Lapsed Players",
+      customerCount: 20,
+      avgRecency: 900,
+      avgFrequency: 1,
+      avgMonetary: 100000,
+      avgRScore: 1,
+      avgFScore: 1,
+      avgMScore: 1,
+      labelReason: "Full-run lapsed label",
+    },
+  ]
+  const groupedStats = [
+    {
+      segmentName: "High-Value Players",
+      _count: { _all: 4 },
+      _avg: {
+        recency: 20,
+        frequency: 6,
+        monetary: 500000,
+        rScore: 4.5,
+        fScore: 4,
+        mScore: 4.2,
+      },
+    },
+  ]
+
+  const filtered = applyRecencyStatsToClusterProfiles(profiles, groupedStats)
+
+  assert.equal(filtered.length, 2)
+  assert.equal(filtered[0].customerCount, 4)
+  assert.equal(filtered[0].avgRecency, 20)
+  assert.match(filtered[0].labelReason, /Average R\/F\/M scores are 4\.50\/4\.00\/4\.20/)
+  assert.equal(filtered[1].customerCount, 0)
+  assert.match(filtered[1].labelReason, /No customers in this segment/)
 })

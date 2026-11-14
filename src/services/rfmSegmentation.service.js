@@ -1115,6 +1115,70 @@ const buildLabelReason = (profile, definition, segmentName) => {
   }
 }
 
+export const applyRecencyStatsToClusterProfiles = (clusterProfiles, groupedStats) => {
+  const statsBySegment = new Map(
+    groupedStats.map((row) => [
+      row.segmentName,
+      {
+        customerCount: row._count?._all ?? 0,
+        avgRecency: toNumber(row._avg?.recency),
+        avgFrequency: toNumber(row._avg?.frequency),
+        avgMonetary: toNumber(row._avg?.monetary),
+        avgRScore: toNumber(row._avg?.rScore),
+        avgFScore: toNumber(row._avg?.fScore),
+        avgMScore: toNumber(row._avg?.mScore),
+      },
+    ])
+  )
+
+  return clusterProfiles.map((profile) => {
+    const stats = statsBySegment.get(profile.segmentName)
+    const definition = SEGMENT_DEFINITION_BY_NAME.get(
+      profile.segmentName?.split(" - ")[0]
+    )
+
+    if (!stats || stats.customerCount === 0) {
+      return {
+        ...profile,
+        customerCount: 0,
+        avgRecency: 0,
+        avgFrequency: 0,
+        avgMonetary: 0,
+        avgRScore: 0,
+        avgFScore: 0,
+        avgMScore: 0,
+        labelReason:
+          "No customers in this segment had a booking within the selected last-visit window.",
+      }
+    }
+
+    return {
+      ...profile,
+      customerCount: stats.customerCount,
+      avgRecency: roundNumber(stats.avgRecency),
+      avgFrequency: roundNumber(stats.avgFrequency),
+      avgMonetary: roundNumber(stats.avgMonetary),
+      avgRScore: roundNumber(stats.avgRScore, 4),
+      avgFScore: roundNumber(stats.avgFScore, 4),
+      avgMScore: roundNumber(stats.avgMScore, 4),
+      labelReason: definition
+        ? buildLabelReason(
+            {
+              avgRecency: roundNumber(stats.avgRecency),
+              avgFrequency: roundNumber(stats.avgFrequency),
+              avgMonetary: roundNumber(stats.avgMonetary),
+              avgRScore: roundNumber(stats.avgRScore, 4),
+              avgFScore: roundNumber(stats.avgFScore, 4),
+              avgMScore: roundNumber(stats.avgMScore, 4),
+            },
+            definition,
+            profile.segmentName
+          )
+        : profile.labelReason,
+    }
+  })
+}
+
 const serializeRun = (run) => {
   if (!run) return null
 
@@ -1189,7 +1253,12 @@ const buildPaginationPayload = ({ totalCustomers, limit, offset, returned }) => 
   hasMore: offset + returned < totalCustomers,
 })
 
-const buildCustomerScoreWhere = ({ runId, segmentName, search = null }) => {
+const buildCustomerScoreWhere = ({
+  runId,
+  segmentName,
+  search = null,
+  maxRecencyDays = null,
+}) => {
   const where = {
     runId,
   }
@@ -1205,15 +1274,28 @@ const buildCustomerScoreWhere = ({ runId, segmentName, search = null }) => {
     where.segmentName = segmentName
   }
 
+  if (hasValue(maxRecencyDays)) {
+    where.recency = {
+      lte: maxRecencyDays,
+    }
+  }
+
   return where
 }
 
-const fetchCustomerScoresPage = async ({ runId, segmentName = null, search = null, limit, offset }) => {
+const fetchCustomerScoresPage = async ({
+  runId,
+  segmentName = null,
+  search = null,
+  maxRecencyDays = null,
+  limit,
+  offset,
+}) => {
   const where = buildCustomerScoreWhere({
     runId,
     segmentName,
     search,
-  
+    maxRecencyDays,
   })
 
   const [totalCustomers, customerScores] = await prisma.$transaction([
@@ -1236,6 +1318,38 @@ const fetchCustomerScoresPage = async ({ runId, segmentName = null, search = nul
       returned: customerScores.length,
     }),
   }
+}
+
+const fetchRecencyFilteredClusterProfiles = async ({
+  runId,
+  clusterProfiles,
+  maxRecencyDays,
+}) => {
+  if (!runId) return clusterProfiles
+  if (!hasValue(maxRecencyDays)) return clusterProfiles
+
+  const groupedStats = await prisma.customerRfmScore.groupBy({
+    by: ["segmentName"],
+    where: {
+      runId,
+      recency: {
+        lte: maxRecencyDays,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+    _avg: {
+      recency: true,
+      frequency: true,
+      monetary: true,
+      rScore: true,
+      fScore: true,
+      mScore: true,
+    },
+  })
+
+  return applyRecencyStatsToClusterProfiles(clusterProfiles, groupedStats)
 }
 
 const buildRunResultPayload = (run, clusterProfiles = [], customerResult = null) => {
@@ -1534,7 +1648,14 @@ export const runRfmSegmentation = async (
       include: getRunInclude(),
     })
 
-    return buildRunResultPayload(completedRun, completedRun?.clusterProfiles || [], null)
+    return {
+      ...buildRunResultPayload(
+        completedRun,
+        completedRun?.clusterProfiles || [],
+        null
+      ),
+      unfilteredTotalCustomers: completedRun?.totalCustomers ?? 0,
+    }
   } catch (error) {
     await prisma.segmentationRun.update({
       where: {
@@ -1591,17 +1712,46 @@ export const getLatestSegmentationResult = async (input = {}) => {
 
   const previousRun = await fetchPreviousSegmentationRun(latestRun.id)
 
+  const clusterProfiles = await fetchRecencyFilteredClusterProfiles({
+    runId: latestRun.id,
+    clusterProfiles: latestRun.clusterProfiles || [],
+    maxRecencyDays: input.maxRecencyDays,
+  })
+
   const customerResult = input.includeCustomers
     ? await fetchCustomerScoresPage({
         runId: latestRun.id,
         segmentName: input.segmentName,
+        maxRecencyDays: input.maxRecencyDays,
         limit: input.limit,
         offset: input.offset || 0,
       })
     : null
 
+  const filteredTotalCustomers = input.maxRecencyDays
+    ? customerResult?.totalCustomers ??
+      clusterProfiles.reduce(
+        (total, profile) => total + toNumber(profile.customerCount),
+        0
+      )
+    : customerResult?.totalCustomers ?? latestRun.totalCustomers
+
+  const payload = buildRunResultPayload(
+    latestRun,
+    clusterProfiles,
+    customerResult
+  )
+
   return {
-    ...buildRunResultPayload(latestRun, latestRun.clusterProfiles || [], customerResult),
+    ...payload,
+    run: payload.run
+      ? {
+          ...payload.run,
+          totalCustomers: filteredTotalCustomers,
+        }
+      : null,
+    totalCustomers: filteredTotalCustomers,
+    unfilteredTotalCustomers: latestRun.totalCustomers,
     previousRun,
   }
 }
@@ -1620,6 +1770,8 @@ export const getSegmentationSummary = async (input = {}) => {
     selectionReason: latestResult.selectionReason,
     clusters: latestResult.clusters,
     summary: latestResult.summary,
+    totalCustomers: latestResult.totalCustomers,
+    unfilteredTotalCustomers: latestResult.unfilteredTotalCustomers,
   }
 }
 
@@ -1647,6 +1799,7 @@ export const getSegmentationCustomers = async (input = {}) => {
     runId: latestResult.run.id,
     segmentName: input.segmentName,
     search: input.search,
+    maxRecencyDays: input.maxRecencyDays,
     limit: input.limit,
     offset: input.offset || 0,
   })
