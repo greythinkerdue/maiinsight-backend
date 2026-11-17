@@ -374,6 +374,51 @@ const serializeRun = (run) =>
 
 const getChurnModelRunById = async (db, id) => serializeRun(await db.churnModelRun.findUnique({ where: { id } }))
 
+const FEATURE_LABELS = {
+  recencyDays: "Days since last booking",
+  log1pFrequency180: "Booking frequency (last 180d)",
+  log1pMonetary180: "Spending (last 180d)",
+  bookingTrend: "Recent booking trend",
+  avgDaysBetweenBookings: "Avg. days between bookings",
+  tenureDays: "Customer tenure",
+}
+
+/**
+ * Logistic regression is linear in its standardized features, so each
+ * feature's contribution to a specific prediction is just
+ * coefficient x standardized_value — no separate explainability model
+ * needed. Returns drivers sorted by |contribution| descending (the
+ * features that moved this customer's score the most, in either direction).
+ */
+export const computeFeatureContributions = ({
+  featuresSnapshot,
+  featureNames,
+  coefficients,
+  featureMeans,
+  featureStds,
+}) => {
+  if (!featuresSnapshot || !featureNames || !coefficients || !featureMeans || !featureStds) return []
+
+  return featureNames
+    .map((name, index) => {
+      const rawValue = featuresSnapshot[name]
+      if (rawValue === undefined || rawValue === null) return null
+
+      const std = featureStds[index] || 1
+      const standardized = (rawValue - featureMeans[index]) / std
+      const contribution = coefficients[index] * standardized
+
+      return {
+        feature: name,
+        label: FEATURE_LABELS[name] || name,
+        rawValue,
+        contribution: Number(contribution.toFixed(4)),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => Math.abs(right.contribution) - Math.abs(left.contribution))
+}
+
 const finalizeInsufficientData = async (db, runId, reason) => {
   await db.churnModelRun.update({
     where: { id: runId },
@@ -597,6 +642,18 @@ export const getLatestChurnRiskResult = async ({
       churnProbability: row.churnProbability,
       riskLabel: row.riskLabel,
       featuresSnapshot: row.featuresSnapshot,
+      topDrivers: computeFeatureContributions({
+        featuresSnapshot: row.featuresSnapshot,
+        featureNames: latestRun.featureNames,
+        coefficients: latestRun.coefficients,
+        featureMeans: latestRun.featureMeans,
+        featureStds: latestRun.featureStds,
+      })
+        .slice(0, 2)
+        .map(({ label, contribution }) => ({
+          label,
+          direction: contribution > 0 ? "increases_risk" : "decreases_risk",
+        })),
     })),
     totalCustomers,
     pagination: {

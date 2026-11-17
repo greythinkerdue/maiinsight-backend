@@ -7,6 +7,7 @@ import {
   buildSnapshotDates,
   computeAUC,
   computeConfusionMetrics,
+  computeFeatureContributions,
   computeSnapshotFeatures,
   predictProbabilities,
   sigmoid,
@@ -142,6 +143,31 @@ test("buildSnapshotDates keeps covering recent history when a long history hits 
   assert.equal(dates.length, 36)
   assert.ok(dates[dates.length - 1].getTime() >= end.getTime() - 86400000)
   assert.ok(dates.some((date) => date.getTime() >= splitDate.getTime()))
+})
+
+test("computeFeatureContributions ranks features by standardized coefficient x value, hand-computed", () => {
+  const contributions = computeFeatureContributions({
+    featuresSnapshot: { a: 14, b: 5 },
+    featureNames: ["a", "b"],
+    coefficients: [2, -1],
+    featureMeans: [10, 5],
+    featureStds: [2, 1],
+  })
+
+  // a: standardized (14-10)/2=2, contribution 2*2=4
+  // b: standardized (5-5)/1=0, contribution -1*0=0
+  assert.equal(contributions.length, 2)
+  assert.equal(contributions[0].feature, "a")
+  assert.equal(contributions[0].contribution, 4)
+  assert.equal(contributions[1].feature, "b")
+  assert.equal(contributions[1].contribution, 0)
+})
+
+test("computeFeatureContributions returns an empty list when model internals are missing", () => {
+  assert.deepEqual(
+    computeFeatureContributions({ featuresSnapshot: { a: 1 }, featureNames: null, coefficients: null, featureMeans: null, featureStds: null }),
+    []
+  )
 })
 
 test("buildChurnDataset sweeps every timeline across every snapshot date, skipping ineligible rows", () => {
