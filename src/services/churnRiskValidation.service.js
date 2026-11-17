@@ -19,6 +19,47 @@ const normalizePositiveInteger = (value, fallback, max) => {
   return Math.min(Math.round(parsed), max ?? Math.round(parsed))
 }
 
+const normalizeIsoDate = (value, fieldName = "date") => {
+  if (!hasValue(value)) return null
+
+  const normalized = String(value).trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw badRequest(`${fieldName} must be in YYYY-MM-DD format.`)
+  }
+
+  const parsedDate = new Date(`${normalized}T00:00:00`)
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw badRequest(`${fieldName} must be a valid calendar date.`)
+  }
+
+  return normalized
+}
+
+const normalizeDecimal = (value, fieldName, { minimum = 0, maximum = null, fallback = null } = {}) => {
+  if (!hasValue(value)) return fallback
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < minimum) {
+    throw badRequest(`${fieldName} must be a number greater than or equal to ${minimum}.`)
+  }
+  if (maximum !== null && parsed > maximum) {
+    throw badRequest(`${fieldName} must be less than or equal to ${maximum}.`)
+  }
+
+  return parsed
+}
+
+const normalizePromoPrefix = (value) => {
+  const normalized = String(value || "WINBACK")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .slice(0, 20)
+
+  if (!normalized) throw badRequest("promoCodePrefix must contain letters or numbers.")
+  return normalized
+}
+
 export const validateChurnRiskLatestInput = (input = {}) => {
   const riskLabel = hasValue(input.riskLabel) ? String(input.riskLabel).trim() : null
   if (riskLabel && !ALLOWED_RISK_LABELS.has(riskLabel)) {
@@ -45,5 +86,37 @@ export const validateChurnRiskLatestInput = (input = {}) => {
     sortDirection,
     limit,
     offset,
+  }
+}
+
+export const validateChurnReactivationCampaignInput = (input = {}) => {
+  const consentConfirmed = input.consentConfirmed === true || String(input.consentConfirmed) === "true"
+  if (!consentConfirmed) {
+    throw badRequest(
+      "consentConfirmed must be true: confirm these customers are existing customers who agreed to receive promotional messages."
+    )
+  }
+
+  const riskLabel = hasValue(input.riskLabel) ? String(input.riskLabel).trim() : "High"
+  if (!ALLOWED_RISK_LABELS.has(riskLabel)) {
+    throw badRequest(`riskLabel must be one of: ${[...ALLOWED_RISK_LABELS].join(", ")}.`)
+  }
+
+  return {
+    riskLabel,
+    name: hasValue(input.name) ? String(input.name).trim().slice(0, 160) : null,
+    campaignDate: normalizeIsoDate(input.campaignDate, "campaignDate"),
+    promoCodePrefix: normalizePromoPrefix(input.promoCodePrefix),
+    costBudget: normalizeDecimal(input.costBudget, "costBudget", {
+      minimum: 0,
+      maximum: 1_000_000_000_000,
+      fallback: 0,
+    }),
+    controlPercent: normalizeDecimal(input.controlPercent, "controlPercent", {
+      minimum: 0,
+      maximum: 50,
+      fallback: 10,
+    }),
+    consentConfirmed,
   }
 }

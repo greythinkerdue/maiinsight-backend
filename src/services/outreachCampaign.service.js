@@ -1,5 +1,6 @@
 import { prisma } from "../config/prisma.js"
 import { HttpError, badRequest } from "../utils/http-error.js"
+import { getLatestChurnRiskResult } from "./churnRisk.service.js"
 import {
   buildAudienceCoverage,
   buildWhatsappMessage,
@@ -7,6 +8,7 @@ import {
   getOccupancyBaseline,
   getRecommendedCustomers,
   getSlotAvailability,
+  resolveSessionNameByHour,
   WEEKDAY_NAMES,
 } from "./lowOccupancyTargeting.service.js"
 import { CANONICAL_TRANSACTION_STATUSES } from "./transactionStatus.service.js"
@@ -694,6 +696,193 @@ export const generateAutoDraftCampaigns = async ({
   }
 
   return { created, scannedDays: lookaheadDays, occupancyThreshold, minAudience }
+}
+
+const mapChurnBookingTypeToLabel = (bookingType) => {
+  if (bookingType === "Manual/Walk-in") return "Membership"
+  if (bookingType === "GeloraApp Booking") return "Non Membership"
+  return bookingType || "Mixed/Other"
+}
+
+/**
+ * Churn-risk scores (CustomerChurnScore) carry no contact info or booking
+ * history by design — they're a model output, not a customer record. This
+ * fills in exactly what buildWhatsappMessage/the outreach recipient shape
+ * needs (phone, preferred session, dominant booking type, total bookings)
+ * from the same transaction history used elsewhere for outreach audiences.
+ */
+const buildChurnReactivationContactInfo = async (customerKeys) => {
+  if (!customerKeys.length) return new Map()
+
+  const transactions = await prisma.facilityTransaction.findMany({
+    where: {
+      customerKey: { in: customerKeys },
+      validBooking: true,
+      status: {
+        in: [CANONICAL_TRANSACTION_STATUSES.PAYMENT_COMPLETED, CANONICAL_TRANSACTION_STATUSES.MANUAL_WALK_IN],
+      },
+      netRevenue: { gt: 0 },
+      bookingEventKey: { not: "" },
+    },
+    orderBy: [{ customerKey: "asc" }, { playDate: "asc" }],
+    select: {
+      customerKey: true,
+      customerName: true,
+      normalizedName: true,
+      nama: true,
+      normalizedPhone: true,
+      noTelepon: true,
+      normalizedEmail: true,
+      email: true,
+      bookingType: true,
+      startHour: true,
+      bookingEventKey: true,
+    },
+  })
+
+  const byCustomer = new Map()
+  const seenEventKeysByCustomer = new Map()
+
+  for (const row of transactions) {
+    const seenEventKeys = seenEventKeysByCustomer.get(row.customerKey) || new Set()
+    const isNewBooking = !seenEventKeys.has(row.bookingEventKey)
+    if (isNewBooking) {
+      seenEventKeys.add(row.bookingEventKey)
+      seenEventKeysByCustomer.set(row.customerKey, seenEventKeys)
+    }
+
+    const existing = byCustomer.get(row.customerKey) || {
+      customerKey: row.customerKey,
+      customerName: row.customerName || row.nama || row.normalizedName || row.customerKey,
+      phone: null,
+      email: null,
+      totalBookingCount: 0,
+      bookingTypeCounts: new Map(),
+      sessionCounts: new Map(),
+    }
+
+    existing.phone = existing.phone || row.normalizedPhone || row.noTelepon || null
+    existing.email = existing.email || row.normalizedEmail || row.email || null
+
+    if (isNewBooking) {
+      existing.totalBookingCount += 1
+      const bookingType = row.bookingType || "other"
+      existing.bookingTypeCounts.set(bookingType, (existing.bookingTypeCounts.get(bookingType) || 0) + 1)
+
+      const hour = Number(String(row.startHour || "").split(":")[0])
+      const sessionName = Number.isInteger(hour) ? resolveSessionNameByHour(hour) : null
+      if (sessionName) {
+        existing.sessionCounts.set(sessionName, (existing.sessionCounts.get(sessionName) || 0) + 1)
+      }
+    }
+
+    byCustomer.set(row.customerKey, existing)
+  }
+
+  const result = new Map()
+  for (const contact of byCustomer.values()) {
+    const dominantBookingType = [...contact.bookingTypeCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0]
+    const preferredSession = [...contact.sessionCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || null
+
+    result.set(contact.customerKey, {
+      customerName: contact.customerName,
+      phone: contact.phone,
+      email: contact.email,
+      totalBookingCount: contact.totalBookingCount,
+      customerTypeLabel: mapChurnBookingTypeToLabel(dominantBookingType),
+      preferredSession,
+    })
+  }
+
+  return result
+}
+
+/**
+ * Builds and persists a reactivation outreach campaign straight from the
+ * latest churn-risk model's at-risk customers, reusing the same
+ * holdout-group/consent/suppression machinery as createOutreachCampaign.
+ * Unlike the slot-based campaigns, there's no single court/session this
+ * audience is tied to, so campaignDay/sessionName/courtType are recorded
+ * as "all"/descriptive metadata rather than a targeting filter.
+ */
+export const createChurnReactivationCampaign = async ({ input, userId = null }) => {
+  const riskLabel = input.riskLabel || "High"
+  const churnResult = await getLatestChurnRiskResult({ riskLabel, limit: MAX_CAMPAIGN_AUDIENCE, offset: 0 })
+  const churnCustomers = churnResult.customers || []
+
+  if (!churnResult.run) {
+    throw badRequest("No churn-risk model has been trained yet. Train a model first.")
+  }
+  if (!churnCustomers.length) {
+    throw badRequest(`No ${riskLabel}-risk customers were found in the latest churn-risk run.`)
+  }
+
+  const contactInfoByCustomer = await buildChurnReactivationContactInfo(
+    churnCustomers.map((customer) => customer.customerKey)
+  )
+
+  const recommended = churnCustomers
+    .map((customer) => {
+      const contact = contactInfoByCustomer.get(customer.customerKey)
+      return {
+        customerKey: customer.customerKey,
+        customerName: contact?.customerName || customer.customerName || customer.customerKey,
+        phone: contact?.phone || null,
+        rfmSegmentName: null,
+        preferredSession: contact?.preferredSession || null,
+        customerTypeLabel: contact?.customerTypeLabel || "Mixed/Other",
+        totalBookingCount: contact?.totalBookingCount || 0,
+        recencyDays: Math.round(customer.featuresSnapshot?.recencyDays ?? 999),
+      }
+    })
+    // Can't send a WhatsApp message to a customer with no phone on file.
+    .filter((customer) => Boolean(customer.phone))
+
+  if (!recommended.length) {
+    throw badRequest("None of the matching churn-risk customers have a phone number on file.")
+  }
+
+  const eligible = await buildEligibleAudience(recommended)
+  if (!eligible.length) {
+    throw badRequest("Every matching customer has opted out of promotional messages.")
+  }
+
+  const campaignDate = input.campaignDate
+    ? new Date(`${input.campaignDate}T00:00:00`)
+    : addDays(startOfDay(new Date()), 1)
+  const campaignDay = WEEKDAY_NAMES[getJakartaWeekdayIndex(campaignDate)]
+  const promoCodePrefix = input.promoCodePrefix || "WINBACK"
+
+  // consentConfirmed is guaranteed true here because the HTTP route
+  // validates it before calling this function, mirroring createOutreachCampaign.
+  const campaign = await persistCampaignWithRecipients({
+    data: {
+      name: input.name || `Churn Reactivation - ${riskLabel} Risk - ${formatIsoDateLocal(campaignDate)}`,
+      promoCodePrefix,
+      campaignDate,
+      campaignDay,
+      sessionName: "all",
+      courtType: "all",
+      segmentName: null,
+      customerType: "all",
+      status: input.status || "active",
+      costBudget: input.costBudget || 0,
+      controlPercent: input.controlPercent ?? 10,
+      consentConfirmed: Boolean(input.consentConfirmed),
+      consentConfirmedAt: input.consentConfirmed ? new Date() : null,
+      audienceFilters: {
+        source: "churn_risk",
+        riskLabel,
+        churnModelRunId: churnResult.run.id,
+      },
+      createdByUserId: userId,
+    },
+    eligible,
+    controlPercent: input.controlPercent ?? 10,
+    promoCodePrefix,
+  })
+
+  return getOutreachCampaignDetail({ campaignId: campaign.id })
 }
 
 export const getOutreachCampaignDetail = async ({ campaignId, includeRecipients = true }) => {
