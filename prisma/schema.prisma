@@ -31,6 +31,7 @@ model User {
   aiUsageLogs       AiUsageLog[]
   outreachCampaigns OutreachCampaign[]  @relation("OutreachCampaignCreatedBy")
   outreachSuppressions OutreachSuppression[] @relation("OutreachSuppressionCreatedBy")
+  churnModelRuns    ChurnModelRun[]     @relation("ChurnModelRunPerformedBy")
 }
 
 model AppSetting {
@@ -399,6 +400,55 @@ model ClusterProfile {
   @@index([runId])
   @@index([segmentName])
   @@map("cluster_profiles")
+}
+
+model ChurnModelRun {
+  id                Int                  @id @default(autoincrement())
+  trainedAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  status            String               @default("running") @db.VarChar(50)
+  errorMessage      String?              @db.Text
+  featureNames      Json?
+  coefficients      Json?
+  intercept         Float?
+  featureMeans      Json?
+  featureStds       Json?
+  threshold         Float                @default(0.5)
+  trainSize         Int                  @default(0)
+  testSize          Int                  @default(0)
+  trainPositiveRate Float?
+  testPositiveRate  Float?
+  aucTest           Float?
+  precisionTest     Float?
+  recallTest        Float?
+  f1Test            Float?
+  customerScores    CustomerChurnScore[]
+  performedByUserId Int?
+  performedBy       User?                @relation("ChurnModelRunPerformedBy", fields: [performedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([trainedAt])
+  @@index([status])
+  @@index([performedByUserId])
+  @@map("churn_model_runs")
+}
+
+model CustomerChurnScore {
+  id               Int           @id @default(autoincrement())
+  runId            Int
+  customerKey      String
+  customerName     String?
+  churnProbability Float
+  riskLabel        String        @db.VarChar(20)
+  featuresSnapshot Json?
+  createdAt        DateTime      @default(now())
+  run              ChurnModelRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, customerKey])
+  @@index([runId])
+  @@index([customerKey])
+  @@index([riskLabel])
+  @@index([churnProbability])
+  @@map("customer_churn_scores")
 }
 
 model MetaRawResponse {
