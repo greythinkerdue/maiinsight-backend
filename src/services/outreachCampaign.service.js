@@ -104,6 +104,105 @@ const bookingMatchesPromo = (booking, promoCodes) => {
   return null
 }
 
+// --- Statistical inference helpers ------------------------------------
+// From-scratch two-proportion z-test (no stats library) for judging whether
+// the holdout-vs-treatment conversion lift is distinguishable from sampling
+// noise, rather than just reporting a raw percentage difference.
+
+const erf = (x) => {
+  // Abramowitz & Stegun 7.1.26 approximation (max error ~1.5e-7) — enough
+  // precision for a p-value/CI on marketing-campaign sample sizes.
+  const sign = x < 0 ? -1 : 1
+  const absX = Math.abs(x)
+  const a1 = 0.254829592
+  const a2 = -0.284496736
+  const a3 = 1.421413741
+  const a4 = -1.453152027
+  const a5 = 1.061405429
+  const p = 0.3275911
+  const t = 1 / (1 + p * absX)
+  const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX)
+  return sign * y
+}
+
+export const normalCdf = (z) => 0.5 * (1 + erf(z / Math.SQRT2))
+
+/**
+ * Two-proportion z-test. x1/n1 is the treatment group (converted / size),
+ * x2/n2 is the holdout/control group. Uses the pooled proportion for the
+ * standard error, as is standard for the hypothesis test (the confidence
+ * interval below intentionally uses the unpooled SE instead).
+ */
+export const twoProportionZTest = ({ x1, n1, x2, n2 }) => {
+  if (!n1 || !n2) return null
+  const p1 = x1 / n1
+  const p2 = x2 / n2
+  const pooledProportion = (x1 + x2) / (n1 + n2)
+  const standardError = Math.sqrt(pooledProportion * (1 - pooledProportion) * (1 / n1 + 1 / n2))
+  if (!standardError) {
+    return { pooledProportion, standardError: 0, zScore: 0, pValue: 1, significant: false }
+  }
+  const zScore = (p1 - p2) / standardError
+  const pValue = 2 * (1 - normalCdf(Math.abs(zScore)))
+  return {
+    pooledProportion: roundNumber(pooledProportion, 4),
+    standardError: roundNumber(standardError, 4),
+    zScore: roundNumber(zScore, 4),
+    pValue: roundNumber(pValue, 4),
+    significant: pValue < 0.05,
+  }
+}
+
+/** Wald confidence interval on the difference in proportions (p1 - p2). */
+export const twoProportionConfidenceInterval = ({ x1, n1, x2, n2, confidenceLevel = 0.95 }) => {
+  if (!n1 || !n2) return null
+  const p1 = x1 / n1
+  const p2 = x2 / n2
+  const standardError = Math.sqrt((p1 * (1 - p1)) / n1 + (p2 * (1 - p2)) / n2)
+  const zCritical = confidenceLevel === 0.99 ? 2.576 : confidenceLevel === 0.9 ? 1.645 : 1.96
+  const marginOfError = zCritical * standardError
+  const diff = p1 - p2
+  return {
+    lower: roundNumber(diff - marginOfError, 4),
+    upper: roundNumber(diff + marginOfError, 4),
+    marginOfError: roundNumber(marginOfError, 4),
+  }
+}
+
+// Below this size per group, a z-test's normal approximation is unreliable
+// and the existing controlNote already tells the caller to treat lift as
+// directional — so significance isn't computed at all rather than reporting
+// a misleadingly precise p-value.
+const MIN_GROUP_SIZE_FOR_SIGNIFICANCE = 5
+
+const buildLiftSignificance = ({ treatmentMetrics, controlMetrics }) => {
+  if (
+    treatmentMetrics.size < MIN_GROUP_SIZE_FOR_SIGNIFICANCE ||
+    controlMetrics.size < MIN_GROUP_SIZE_FOR_SIGNIFICANCE
+  ) {
+    return null
+  }
+  const params = {
+    x1: treatmentMetrics.convertedCustomers,
+    n1: treatmentMetrics.size,
+    x2: controlMetrics.convertedCustomers,
+    n2: controlMetrics.size,
+  }
+  const zTest = twoProportionZTest(params)
+  const confidenceInterval = twoProportionConfidenceInterval(params)
+  if (!zTest || !confidenceInterval) return null
+  return {
+    pValue: zTest.pValue,
+    zScore: zTest.zScore,
+    significant: zTest.significant,
+    confidenceIntervalPct: [
+      roundNumber(confidenceInterval.lower * 100, 1),
+      roundNumber(confidenceInterval.upper * 100, 1),
+    ],
+    method: "two_proportion_z_test",
+  }
+}
+
 /**
  * Pure attribution/KPI calculation. Kept independent from Prisma so the
  * formulas can be unit-tested without a database.
@@ -276,6 +375,7 @@ export const computeOutreachMetrics = ({
     conversionRate: treatmentMetrics.conversionRate,
     controlConversionRate: controlMetrics.conversionRate,
     liftPct,
+    liftSignificance: buildLiftSignificance({ treatmentMetrics, controlMetrics }),
     estimatedIncrementalBookings: roundNumber(estimatedIncrementalBookings),
     estimatedIncrementalRevenue: roundNumber(estimatedIncrementalRevenue),
     attributedBookingCount,

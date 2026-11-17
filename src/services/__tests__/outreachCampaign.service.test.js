@@ -6,7 +6,10 @@ import {
   buildPromoCode,
   buildWhatsappUrl,
   computeOutreachMetrics,
+  normalCdf,
   normalizePhoneForWhatsapp,
+  twoProportionConfidenceInterval,
+  twoProportionZTest,
 } from "../outreachCampaign.service.js"
 
 test("buildPromoCode is stable, uppercase, and campaign-scoped", () => {
@@ -232,5 +235,85 @@ test("missing control group marks lift as unavailable rather than zero", () => {
   assert.equal(metrics.controlSize, 0)
   assert.equal(metrics.controlConversionRate, 0)
   assert.equal(metrics.liftPct, null)
+  assert.equal(metrics.liftSignificance, null)
   assert.match(String(metrics.controlNote), /No holdout group/)
+})
+
+test("normalCdf matches standard normal distribution reference values", () => {
+  assert.ok(Math.abs(normalCdf(0) - 0.5) < 1e-6)
+  assert.ok(Math.abs(normalCdf(1.96) - 0.975) < 1e-3)
+  assert.ok(Math.abs(normalCdf(-1.96) - 0.025) < 1e-3)
+})
+
+test("twoProportionZTest matches a hand-computed borderline example", () => {
+  // p1=0.3 (30/100), p2=0.2 (20/100): pooled=0.25, SE~=0.06124, z~=1.633, p~=0.1026
+  const result = twoProportionZTest({ x1: 30, n1: 100, x2: 20, n2: 100 })
+  assert.ok(Math.abs(result.zScore - 1.633) < 0.01)
+  assert.ok(Math.abs(result.pValue - 0.1026) < 0.01)
+  assert.equal(result.significant, false)
+})
+
+test("twoProportionZTest flags a clear lift as significant", () => {
+  const result = twoProportionZTest({ x1: 60, n1: 100, x2: 20, n2: 100 })
+  assert.equal(result.significant, true)
+  assert.ok(result.pValue < 0.001)
+})
+
+test("twoProportionConfidenceInterval brackets the observed proportion difference", () => {
+  const ci = twoProportionConfidenceInterval({ x1: 30, n1: 100, x2: 20, n2: 100 })
+  assert.ok(ci.lower < 0.1 && ci.upper > 0.1)
+})
+
+test("computeOutreachMetrics omits liftSignificance below the minimum group size", () => {
+  const metrics = computeOutreachMetrics({
+    recipients: [
+      { customerKey: "a", promoCode: "X-1-0001", isControl: false, status: "sent" },
+      { customerKey: "b", promoCode: "X-1-0002", isControl: true, status: "sent" },
+    ],
+    bookings: [],
+  })
+
+  assert.equal(metrics.liftSignificance, null)
+})
+
+test("computeOutreachMetrics reports a significant lift for a clearly separated holdout", () => {
+  const treatment = Array.from({ length: 10 }, (_, index) => ({
+    customerKey: `t${index + 1}`,
+    promoCode: `T-1-${String(index + 1).padStart(4, "0")}`,
+    isControl: false,
+    status: "sent",
+  }))
+  const control = Array.from({ length: 10 }, (_, index) => ({
+    customerKey: `c${index + 1}`,
+    promoCode: `T-1-C${String(index + 1).padStart(3, "0")}`,
+    isControl: true,
+    status: "sent",
+  }))
+  const treatmentBookings = treatment.slice(0, 8).map((recipient) => ({
+    customerKey: recipient.customerKey,
+    bookingEventKey: `${recipient.customerKey}-1`,
+    playDate: "2026-11-20",
+    netRevenue: 100000,
+    promoName: recipient.promoCode,
+  }))
+  const controlBookings = [
+    {
+      customerKey: "c1",
+      bookingEventKey: "c1-1",
+      playDate: "2026-11-20",
+      netRevenue: 100000,
+    },
+  ]
+
+  const metrics = computeOutreachMetrics({
+    recipients: [...treatment, ...control],
+    bookings: [...treatmentBookings, ...controlBookings],
+  })
+
+  assert.equal(metrics.treatmentSize, 10)
+  assert.equal(metrics.controlSize, 10)
+  assert.ok(metrics.liftSignificance)
+  assert.equal(metrics.liftSignificance.method, "two_proportion_z_test")
+  assert.equal(metrics.liftSignificance.significant, true)
+  assert.ok(metrics.liftSignificance.pValue < 0.01)
 })
