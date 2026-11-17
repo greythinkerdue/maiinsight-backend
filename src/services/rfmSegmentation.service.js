@@ -1253,10 +1253,45 @@ const buildPaginationPayload = ({ totalCustomers, limit, offset, returned }) => 
   hasMore: offset + returned < totalCustomers,
 })
 
+const buildCustomerScoreOrderBy = ({
+  sortBy = null,
+  sortDirection = "asc",
+} = {}) => {
+  const direction = sortDirection === "desc" ? "desc" : "asc"
+  const tiebreaker = { customerKey: "asc" }
+
+  switch (sortBy) {
+    case "customer":
+      return [{ customerName: direction }, { customerKey: direction }]
+    case "bookingType":
+      return [{ bookingTypeDominant: direction }, tiebreaker]
+    case "recency":
+      return [{ recency: direction }, tiebreaker]
+    case "frequency":
+      return [{ frequency: direction }, tiebreaker]
+    case "monetary":
+      return [{ monetary: direction }, tiebreaker]
+    case "segment":
+      return [{ segmentName: direction }, tiebreaker]
+    case "clusterFit":
+      return [{ centroidDistance: direction }, tiebreaker]
+    default:
+      return [{ clusterId: "asc" }, { monetary: "desc" }, { customerKey: "asc" }]
+  }
+}
+
 const buildCustomerScoreWhere = ({
   runId,
   segmentName,
   search = null,
+  bookingTypeDominant = null,
+  recencyMin = null,
+  recencyMax = null,
+  frequencyMin = null,
+  frequencyMax = null,
+  monetaryMin = null,
+  monetaryMax = null,
+  clusterFit = null,
   maxRecencyDays = null,
 }) => {
   const where = {
@@ -1274,10 +1309,61 @@ const buildCustomerScoreWhere = ({
     where.segmentName = segmentName
   }
 
+  if (hasValue(bookingTypeDominant)) {
+    where.bookingTypeDominant = bookingTypeDominant
+  }
+
+  if (hasValue(clusterFit)) {
+    where.clusterFit = clusterFit
+  }
+
+  const recency = {}
+
   if (hasValue(maxRecencyDays)) {
-    where.recency = {
-      lte: maxRecencyDays,
-    }
+    recency.lte = Number(maxRecencyDays)
+  }
+
+  if (hasValue(recencyMin)) {
+    recency.gte = Number(recencyMin)
+  }
+
+  if (hasValue(recencyMax)) {
+    const requestedMax = Number(recencyMax)
+    recency.lte = hasValue(recency.lte)
+      ? Math.min(recency.lte, requestedMax)
+      : requestedMax
+  }
+
+  if (Object.keys(recency).length > 0) {
+    where.recency = recency
+  }
+
+  const frequency = {}
+
+  if (hasValue(frequencyMin)) {
+    frequency.gte = Number(frequencyMin)
+  }
+
+  if (hasValue(frequencyMax)) {
+    frequency.lte = Number(frequencyMax)
+  }
+
+  if (Object.keys(frequency).length > 0) {
+    where.frequency = frequency
+  }
+
+  const monetary = {}
+
+  if (hasValue(monetaryMin)) {
+    monetary.gte = Number(monetaryMin)
+  }
+
+  if (hasValue(monetaryMax)) {
+    monetary.lte = Number(monetaryMax)
+  }
+
+  if (Object.keys(monetary).length > 0) {
+    where.monetary = monetary
   }
 
   return where
@@ -1287,7 +1373,17 @@ const fetchCustomerScoresPage = async ({
   runId,
   segmentName = null,
   search = null,
+  bookingTypeDominant = null,
+  recencyMin = null,
+  recencyMax = null,
+  frequencyMin = null,
+  frequencyMax = null,
+  monetaryMin = null,
+  monetaryMax = null,
+  clusterFit = null,
   maxRecencyDays = null,
+  sortBy = null,
+  sortDirection = "asc",
   limit,
   offset,
 }) => {
@@ -1295,6 +1391,14 @@ const fetchCustomerScoresPage = async ({
     runId,
     segmentName,
     search,
+    bookingTypeDominant,
+    recencyMin,
+    recencyMax,
+    frequencyMin,
+    frequencyMax,
+    monetaryMin,
+    monetaryMax,
+    clusterFit,
     maxRecencyDays,
   })
 
@@ -1302,7 +1406,7 @@ const fetchCustomerScoresPage = async ({
     prisma.customerRfmScore.count({ where }),
     prisma.customerRfmScore.findMany({
       where,
-      orderBy: [{ clusterId: "asc" }, { monetary: "desc" }, { customerKey: "asc" }],
+      orderBy: buildCustomerScoreOrderBy({ sortBy, sortDirection }),
       skip: offset,
       take: limit,
     }),
@@ -1722,7 +1826,18 @@ export const getLatestSegmentationResult = async (input = {}) => {
     ? await fetchCustomerScoresPage({
         runId: latestRun.id,
         segmentName: input.segmentName,
+        search: input.search,
+        bookingTypeDominant: input.bookingTypeDominant,
+        recencyMin: input.recencyMin,
+        recencyMax: input.recencyMax,
+        frequencyMin: input.frequencyMin,
+        frequencyMax: input.frequencyMax,
+        monetaryMin: input.monetaryMin,
+        monetaryMax: input.monetaryMax,
+        clusterFit: input.clusterFit,
         maxRecencyDays: input.maxRecencyDays,
+        sortBy: input.sortBy,
+        sortDirection: input.sortDirection,
         limit: input.limit,
         offset: input.offset || 0,
       })
@@ -1799,7 +1914,17 @@ export const getSegmentationCustomers = async (input = {}) => {
     runId: latestResult.run.id,
     segmentName: input.segmentName,
     search: input.search,
+    bookingTypeDominant: input.bookingTypeDominant,
+    recencyMin: input.recencyMin,
+    recencyMax: input.recencyMax,
+    frequencyMin: input.frequencyMin,
+    frequencyMax: input.frequencyMax,
+    monetaryMin: input.monetaryMin,
+    monetaryMax: input.monetaryMax,
+    clusterFit: input.clusterFit,
     maxRecencyDays: input.maxRecencyDays,
+    sortBy: input.sortBy,
+    sortDirection: input.sortDirection,
     limit: input.limit,
     offset: input.offset || 0,
   })

@@ -4,6 +4,21 @@ const MAX_PAGE_SIZE = 500
 const DEFAULT_PAGE_SIZE = 100
 const MAX_RECENCY_FILTER_DAYS = 3650
 const ALLOWED_PERIOD_TYPES = new Set(["MTD", "YTD"])
+const ALLOWED_CLUSTER_FIT_VALUES = new Set([
+  "representative",
+  "reassigned",
+  "mixed_borderline",
+])
+const ALLOWED_CUSTOMER_SORT_FIELDS = new Set([
+  "customer",
+  "bookingType",
+  "recency",
+  "frequency",
+  "monetary",
+  "segment",
+  "clusterFit",
+])
+const ALLOWED_SORT_DIRECTIONS = new Set(["asc", "desc"])
 const BOOKING_TYPE_TOKENS = new Map([
   ["geloraapp booking", "GeloraApp Booking"],
   ["gelora app booking", "GeloraApp Booking"],
@@ -58,6 +73,30 @@ const normalizeNonNegativeInteger = (value, fieldName) => {
 
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw badRequest(`${fieldName} must be a non-negative integer.`)
+  }
+
+  return parsed
+}
+
+const normalizeOptionalNonNegativeInteger = (value, fieldName) => {
+  if (!hasValue(value)) return null
+
+  const parsed = Number(value)
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw badRequest(`${fieldName} must be a non-negative integer.`)
+  }
+
+  return parsed
+}
+
+const normalizeOptionalNonNegativeNumber = (value, fieldName) => {
+  if (!hasValue(value)) return null
+
+  const parsed = Number(value)
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw badRequest(`${fieldName} must be a non-negative number.`)
   }
 
   return parsed
@@ -162,6 +201,48 @@ const normalizeSegmentName = (value) => {
   return normalized
 }
 
+const normalizeClusterFit = (value) => {
+  if (!hasValue(value)) return null
+
+  const normalized = String(value).trim().toLowerCase()
+
+  if (normalized === "all") return null
+
+  if (!ALLOWED_CLUSTER_FIT_VALUES.has(normalized)) {
+    throw badRequest(
+      "clusterFit must be representative, reassigned, mixed_borderline, or omitted."
+    )
+  }
+
+  return normalized
+}
+
+const normalizeCustomerSortBy = (value) => {
+  if (!hasValue(value)) return null
+
+  const normalized = String(value).trim()
+
+  if (!ALLOWED_CUSTOMER_SORT_FIELDS.has(normalized)) {
+    throw badRequest(
+      "sortBy must be customer, bookingType, recency, frequency, monetary, segment, clusterFit, or omitted."
+    )
+  }
+
+  return normalized
+}
+
+const normalizeSortDirection = (value) => {
+  if (!hasValue(value)) return null
+
+  const normalized = String(value).trim().toLowerCase()
+
+  if (!ALLOWED_SORT_DIRECTIONS.has(normalized)) {
+    throw badRequest("sortDirection must be asc, desc, or omitted.")
+  }
+
+  return normalized
+}
+
 const normalizeRunId = (value) => {
   if (!hasValue(value)) return null
   return normalizePositiveInteger(value, "runId")
@@ -206,6 +287,16 @@ export const validateSegmentationLookupInput = (input = {}) => ({
 export const validateSegmentationCustomerInput = (input = {}) => ({
   ...validateSegmentationLookupInput(input),
   segmentName: normalizeSegmentName(input.segmentName),
+  bookingTypeDominant: normalizeBookingType(input.bookingTypeDominant),
+  recencyMin: normalizeOptionalNonNegativeInteger(input.recencyMin, "recencyMin"),
+  recencyMax: normalizeOptionalNonNegativeInteger(input.recencyMax, "recencyMax"),
+  frequencyMin: normalizeOptionalNonNegativeInteger(input.frequencyMin, "frequencyMin"),
+  frequencyMax: normalizeOptionalNonNegativeInteger(input.frequencyMax, "frequencyMax"),
+  monetaryMin: normalizeOptionalNonNegativeNumber(input.monetaryMin, "monetaryMin"),
+  monetaryMax: normalizeOptionalNonNegativeNumber(input.monetaryMax, "monetaryMax"),
+  clusterFit: normalizeClusterFit(input.clusterFit),
+  sortBy: normalizeCustomerSortBy(input.sortBy),
+  sortDirection: normalizeSortDirection(input.sortDirection),
   limit:
     normalizePositiveInteger(input.limit, "limit", {
       minimum: 1,

@@ -51,7 +51,7 @@ const validResult = (overrides = {}) => ({
   })),
   followUpPlan: "Send one reminder to customers who have not booked yet.",
   stopCondition: "Stop the campaign after the period ends.",
-  whatsappMessage: "Hi, come back and play at Maiin Gandaria again.",
+  whatsappMessage: "Hai kak, yuk main lagi di Maiin Gandaria dan amankan jadwal favoritmu.",
   expectedBusinessImpact: "May increase bookings from reactivated customers.",
   kpis: Array.from({ length: 3 }, (_, index) => ({
     name: `KPI ${index}`, definition: "Bookings from the target segment.", targetDirection: "increase",
@@ -90,7 +90,7 @@ const validOffPeakResult = (overrides = {}) =>
     campaignObjective: "Increase Tuesday (Selasa) afternoon (Siang) session occupancy.",
     suggestedOffer: "Add a benefit to Tuesday (Selasa) afternoon (Siang) bookings.",
     offerReasoning: "Tuesday (Selasa) afternoon (Siang) has the lowest historical occupancy.",
-    whatsappMessage: "Book Tuesday (Selasa) afternoon (Siang) with an extra benefit from Maiin Gandaria.",
+    whatsappMessage: "Yuk isi jadwal Selasa siang dengan penawaran spesial dari Maiin Gandaria.",
     ...overrides,
   })
 
@@ -150,6 +150,19 @@ test("clearly Indonesian explanatory content is rejected", () => {
       dataLimitation: "Data atribusi kampanye tidak tersedia.",
       whatsappMessage: "Yuk kembali main bersama kami di Maiin Gandaria.",
     }), context()),
+    (error) => error.errorCode === "AI_RESPONSE_LANGUAGE_MISMATCH"
+  )
+})
+
+test("clearly English WhatsApp drafts are rejected while analytical fields stay English", () => {
+  assert.throws(
+    () => validateStrategyResponse(
+      validResult({
+        whatsappMessage:
+          "Hi, this is a special offer for selected customers. Book your favorite slot through our campaign and get the benefit.",
+      }),
+      context()
+    ),
     (error) => error.errorCode === "AI_RESPONSE_LANGUAGE_MISMATCH"
   )
 })

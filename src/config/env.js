@@ -34,6 +34,17 @@ export const env = {
   metaAccessToken: process.env.META_ACCESS_TOKEN || "",
   metaIgUserId: process.env.META_IG_USER_ID || "",
   metaPageId: process.env.META_PAGE_ID || "",
+  whatsappApiBaseUrl: process.env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com",
+  whatsappApiVersion: process.env.WHATSAPP_API_VERSION || process.env.META_API_VERSION || "v25.0",
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
+  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+  whatsappTemplateName: process.env.WHATSAPP_TEMPLATE_NAME || "",
+  whatsappTemplateLanguage: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "id",
+  // The webhook verify token is a shared secret checked during Meta's GET
+  // handshake only — it never needs to change at runtime, so unlike the
+  // other WhatsApp settings it is not exposed through System Settings.
+  whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "",
   googleClientId: String(process.env.GOOGLE_CLIENT_ID || "").trim(),
   healthReminderEnabled: String(process.env.HEALTH_REMINDER_ENABLED ?? "true").trim() !== "false",
   healthReminderRecipients: (process.env.HEALTH_REMINDER_RECIPIENTS || "")
@@ -43,6 +54,10 @@ export const env = {
   healthReminderCron: process.env.HEALTH_REMINDER_CRON || "0 6,18 * * *",
   campaignAttributionEnabled: String(process.env.CAMPAIGN_ATTRIBUTION_ENABLED ?? "true").trim() !== "false",
   campaignAttributionCron: process.env.CAMPAIGN_ATTRIBUTION_CRON || "30 2 * * *",
+  autoDraftCampaignEnabled: String(process.env.AUTO_DRAFT_CAMPAIGN_ENABLED ?? "true").trim() !== "false",
+  // Monday 07:00 Jakarta: ahead of the week it scans for, after the Sunday
+  // batch of transactions would typically have been imported.
+  autoDraftCampaignCron: process.env.AUTO_DRAFT_CAMPAIGN_CRON || "0 7 * * 1",
 };
 
 export const getRequiredJwtSecret = (value = env.jwtSecret) =>

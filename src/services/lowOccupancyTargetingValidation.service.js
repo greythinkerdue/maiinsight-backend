@@ -123,6 +123,7 @@ export const validateRecommendedCustomersInput = (input = {}) => ({
   sessionName: normalizeSessionName(input.sessionName),
   customerType: normalizeCustomerType(input.customerType),
   segmentName: normalizeSegmentName(input.segmentName),
+  campaignDate: normalizeIsoDate(input.campaignDate, "campaignDate"),
   limit: normalizeNumber(input.limit, "limit", {
     minimum: 1,
     maximum: MAX_PAGE_SIZE,
@@ -186,3 +187,111 @@ export const LOW_OCCUPANCY_TARGETING_DEFAULTS = {
   defaultPageSize: DEFAULT_PAGE_SIZE,
   maxPageSize: MAX_PAGE_SIZE,
 }
+
+const normalizeDecimal = (value, fieldName, { minimum = 0, maximum = null, fallback = null } = {}) => {
+  if (!hasValue(value)) return fallback
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < minimum) {
+    throw badRequest(`${fieldName} must be a number greater than or equal to ${minimum}.`)
+  }
+
+  if (maximum !== null && parsed > maximum) {
+    throw badRequest(`${fieldName} must be less than or equal to ${maximum}.`)
+  }
+
+  return parsed
+}
+
+const normalizePromoPrefix = (value) => {
+  const normalized = String(value || "MAIIN")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .slice(0, 20)
+
+  if (!normalized) throw badRequest("promoCodePrefix must contain letters or numbers.")
+  return normalized
+}
+
+const normalizeCampaignStatus = (value) => {
+  const normalized = String(value || "").trim().toLowerCase()
+  if (!["draft", "active", "completed", "archived"].includes(normalized)) {
+    throw badRequest("status must be draft, active, completed, or archived.")
+  }
+  return normalized
+}
+
+const normalizeRecipientStatus = (value) => {
+  const normalized = String(value || "").trim().toLowerCase()
+  if (!["pending", "sent", "skipped", "opted_out"].includes(normalized)) {
+    throw badRequest("status must be pending, sent, skipped, or opted_out.")
+  }
+  return normalized
+}
+
+export const validateSlotAvailabilityInput = (input = {}) => ({
+  campaignDate: normalizeIsoDate(input.campaignDate, "campaignDate"),
+  sessionName: normalizeSessionName(input.sessionName),
+  courtType: normalizeCourtType(input.courtType),
+})
+
+export const validateCreateOutreachCampaignInput = (input = {}) => {
+  const consentConfirmed = input.consentConfirmed === true || String(input.consentConfirmed) === "true"
+  if (!consentConfirmed) {
+    throw badRequest(
+      "consentConfirmed must be true: confirm these customers are existing customers who agreed to receive promotional messages."
+    )
+  }
+
+  return {
+    name: normalizeRequiredText(input.name, "name", { maxLength: 160 }),
+    campaignDate: normalizeIsoDate(input.campaignDate, "campaignDate"),
+    campaignDay: ALLOWED_CAMPAIGN_DAYS.has(String(input.campaignDay || ""))
+      ? String(input.campaignDay)
+      : (() => { throw badRequest("campaignDay must be a weekday name.") })(),
+    sessionName: normalizeSessionName(input.sessionName),
+    courtType: normalizeCourtType(input.courtType),
+    customerType: normalizeCustomerType(input.customerType),
+    segmentName: normalizeSegmentName(input.segmentName),
+    analysisPeriodMonths: (() => {
+      const months = normalizeNumber(input.analysisPeriodMonths, "analysisPeriodMonths", { minimum: 1, fallback: 3 })
+      if (!ALLOWED_ANALYSIS_MONTHS.has(months)) throw badRequest("analysisPeriodMonths must be 1, 2, 3, 4, 6, or 12.")
+      return months
+    })(),
+    promoCodePrefix: normalizePromoPrefix(input.promoCodePrefix),
+    costBudget: normalizeDecimal(input.costBudget, "costBudget", {
+      minimum: 0,
+      maximum: 1_000_000_000_000,
+      fallback: 0,
+    }),
+    controlPercent: normalizeNumber(input.controlPercent, "controlPercent", {
+      minimum: 0,
+      maximum: 50,
+      fallback: 10,
+    }),
+    consentConfirmed,
+  }
+}
+
+export const validateUpdateRecipientInput = (input = {}) => ({
+  status: normalizeRecipientStatus(input.status),
+})
+
+export const validateSuppressionInput = (input = {}) => ({
+  customerKey: normalizeRequiredText(input.customerKey, "customerKey", { maxLength: 50 }),
+  reason: hasValue(input.reason)
+    ? String(input.reason).trim().slice(0, 255)
+    : "Customer opted out of promotional messages.",
+})
+
+export const validateCampaignKpiInput = (input = {}) => ({
+  campaignId: hasValue(input.campaignId)
+    ? normalizeNumber(input.campaignId, "campaignId", { minimum: 1 })
+    : null,
+})
+
+export const validateCampaignStatusInput = (input = {}) => ({
+  status: normalizeCampaignStatus(input.status),
+  confirmConsent: input.confirmConsent === true || String(input.confirmConsent) === "true",
+})

@@ -33,9 +33,29 @@ test("validateRecommendedCustomersInput normalizes valid query params", () => {
       sessionName: "Morning",
       customerType: "non_membership",
       segmentName: "Occasional Players",
+      campaignDate: null,
       limit: 25,
       offset: 5,
     }
+  )
+})
+
+test("validateRecommendedCustomersInput validates campaignDate format", () => {
+  const valid = validateRecommendedCustomersInput({
+    campaignDay: "Friday",
+    campaignDate: "2026-11-20",
+    sessionName: "Morning",
+  })
+  assert.equal(valid.campaignDate, "2026-11-20")
+
+  assert.throws(
+    () =>
+      validateRecommendedCustomersInput({
+        campaignDay: "Friday",
+        campaignDate: "20-11-2026",
+        sessionName: "Morning",
+      }),
+    /campaignDate must be in YYYY-MM-DD format/
   )
 })
 

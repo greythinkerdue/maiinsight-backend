@@ -27,7 +27,10 @@ model User {
   metaSyncLogs      MetaSyncLog[]       @relation("MetaSyncPerformedBy")
   segmentationRuns SegmentationRun[]   @relation("SegmentationRunPerformedBy")
   aiStrategies      AiStrategy[]        @relation("AiStrategyPerformedBy")
+  aiStrategiesApproved AiStrategy[]      @relation("AiStrategyApprovedBy")
   aiUsageLogs       AiUsageLog[]
+  outreachCampaigns OutreachCampaign[]  @relation("OutreachCampaignCreatedBy")
+  outreachSuppressions OutreachSuppression[] @relation("OutreachSuppressionCreatedBy")
 }
 
 model AppSetting {
@@ -117,13 +120,20 @@ model AiStrategy {
   offerFrameworkKey  String?  @db.VarChar(100)
   analysisPeriodKey  String?  @db.VarChar(50)
   strategy           Json
+  status             String   @default("draft") @db.VarChar(30)
+  sourceContext      Json?
   generatedAt        DateTime @default(now())
+  approvedAt         DateTime?
   performedByUserId  Int?
   performedBy        User?    @relation("AiStrategyPerformedBy", fields: [performedByUserId], references: [id], onDelete: SetNull)
+  approvedByUserId   Int?
+  approvedBy         User?    @relation("AiStrategyApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
 
   @@index([generatedAt])
   @@index([targetSegmentKey])
   @@index([performedByUserId])
+  @@index([approvedByUserId])
+  @@index([status])
   @@map("ai_strategies")
 }
 
@@ -276,6 +286,8 @@ model FacilityTransaction {
   @@index([bookingType])
   @@index([validBooking])
   @@index([bookingRangeKey])
+  @@index([playDate, validBooking])
+  @@index([customerKey, playDate])
   @@map("facility_transactions")
 }
 
@@ -297,6 +309,7 @@ model CourtHourUsage {
   @@index([playDate])
   @@index([hourStart])
   @@index([courtType])
+  @@index([playDate, hourStart])
   @@map("court_hour_usages")
 }
 
@@ -484,6 +497,73 @@ model CampaignAttributionExtractionLog {
   @@index([status])
   @@index([createdAt])
   @@map("campaign_attribution_extraction_logs")
+}
+
+model OutreachCampaign {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(160)
+  promoCodePrefix     String                @db.VarChar(40)
+  campaignDate        DateTime
+  campaignDay         String                @db.VarChar(20)
+  sessionName         String                @db.VarChar(30)
+  courtType           String                @db.VarChar(30)
+  segmentName         String?               @db.VarChar(100)
+  customerType        String                @db.VarChar(30) @default("all")
+  status              String                @default("draft") @db.VarChar(30)
+  costBudget          Decimal?              @db.Decimal(14, 2)
+  controlPercent      Int                   @default(10)
+  consentConfirmed    Boolean               @default(false)
+  consentConfirmedAt  DateTime?
+  audienceFilters     Json?
+  createdByUserId     Int?
+  createdBy           User?                 @relation("OutreachCampaignCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  recipients          OutreachRecipient[]
+
+  @@index([campaignDate])
+  @@index([status])
+  @@index([createdByUserId])
+  @@map("outreach_campaigns")
+}
+
+model OutreachRecipient {
+  id                 Int              @id @default(autoincrement())
+  campaignId         Int
+  customerKey        String           @db.VarChar(50)
+  customerName       String?
+  phone              String?          @db.VarChar(50)
+  rfmSegmentName     String?          @db.VarChar(100)
+  preferredSession   String?          @db.VarChar(30)
+  customerTypeLabel  String?          @db.VarChar(50)
+  totalBookingCount  Int              @default(0)
+  recencyDays        Int              @default(999)
+  suggestedAction    String?          @db.VarChar(200)
+  promoCode          String           @unique @db.VarChar(60)
+  isControl          Boolean          @default(false)
+  status             String           @default("pending") @db.VarChar(30)
+  sentAt             DateTime?
+  createdAt          DateTime         @default(now())
+  campaign           OutreachCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, customerKey])
+  @@index([campaignId])
+  @@index([customerKey])
+  @@index([promoCode])
+  @@index([status])
+  @@map("outreach_recipients")
+}
+
+model OutreachSuppression {
+  id               Int      @id @default(autoincrement())
+  customerKey      String   @unique @db.VarChar(50)
+  reason           String?  @db.VarChar(255)
+  createdByUserId  Int?
+  createdBy        User?    @relation("OutreachSuppressionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+
+  @@index([createdByUserId])
+  @@map("outreach_suppressions")
 }
 model InstagramMedia {
   id               String                  @id @default(cuid()) @db.VarChar(30)

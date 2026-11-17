@@ -17,6 +17,7 @@ import { buildConfigSnapshot, parseDatabaseName, writeAppSettings } from "../ser
 import { sendActivationEmail } from "../services/email.service.js"
 import { checkMetaTokenHealth } from "../services/meta.service.js"
 import { createNotificationsForRoles } from "../services/notification.service.js"
+import { sendTestMessage } from "../services/whatsappBusiness.service.js"
 import { validatePassword } from "../services/passwordPolicy.service.js"
 import { countEligibleCanonicalCustomers } from "../services/rfmSegmentation.service.js"
 import {
@@ -232,6 +233,11 @@ const getSystemSummary = async (req, res, next) => {
           metaGraphVersion: config.metaGraphVersion,
           geminiApiKeyConfigured: Boolean(config.geminiApiKey),
           metaAccessTokenConfigured: Boolean(config.metaAccessToken),
+          whatsappConfigured:
+            Boolean(config.whatsappAccessToken && config.whatsappPhoneNumberId && config.whatsappTemplateName) &&
+            config.whatsappEnabled,
+          whatsappEnabled: config.whatsappEnabled,
+          whatsappAccessTokenConfigured: Boolean(config.whatsappAccessToken),
         },
         latestImport,
         latestSegmentationRun,
@@ -396,6 +402,19 @@ const updateIntegrationConfig = async (req, res, next) => {
           req.body?.metaEnabled === undefined
             ? currentConfig.metaEnabled
             : req.body.metaEnabled === true || req.body.metaEnabled === "true",
+        whatsappPhoneNumberId: req.body?.whatsappPhoneNumberId ?? currentConfig.whatsappPhoneNumberId,
+        whatsappBusinessAccountId:
+          req.body?.whatsappBusinessAccountId ?? currentConfig.whatsappBusinessAccountId,
+        whatsappTemplateName: req.body?.whatsappTemplateName ?? currentConfig.whatsappTemplateName,
+        whatsappTemplateLanguage:
+          req.body?.whatsappTemplateLanguage ?? currentConfig.whatsappTemplateLanguage,
+        whatsappGraphVersion: req.body?.whatsappGraphVersion ?? currentConfig.whatsappGraphVersion,
+        whatsappAccessToken:
+          String(req.body?.whatsappAccessToken || "").trim() || currentConfig.whatsappAccessToken,
+        whatsappEnabled:
+          req.body?.whatsappEnabled === undefined
+            ? currentConfig.whatsappEnabled
+            : req.body.whatsappEnabled === true || req.body.whatsappEnabled === "true",
       }),
     })
   } catch (error) {
@@ -405,6 +424,41 @@ const updateIntegrationConfig = async (req, res, next) => {
 
 router.put("/integrations", authorize(...SYSTEM_CONFIG_ROLES), updateIntegrationConfig)
 router.put("/config", authorize(...SYSTEM_CONFIG_ROLES), updateIntegrationConfig)
+
+router.post("/whatsapp/test-send", authorize(...SYSTEM_CONFIG_ROLES), async (req, res) => {
+  try {
+    const to = String(req.body?.to || "").trim()
+    if (!to) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a phone number to send the test message to.",
+      })
+    }
+    const parameters = Array.isArray(req.body?.parameters)
+      ? req.body.parameters.map((value) => String(value)).slice(0, 10)
+      : []
+
+    const result = await sendTestMessage({
+      to,
+      parameters,
+      templateName: req.body?.templateName ? String(req.body.templateName).trim() : undefined,
+      templateLanguage: req.body?.templateLanguage ? String(req.body.templateLanguage).trim() : undefined,
+    })
+
+    await logActivity(req, "WHATSAPP_TEST_MESSAGE_SENT", { to: result.to })
+
+    return res.json({
+      success: true,
+      message: "Test message sent.",
+      data: result,
+    })
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Test message could not be sent.",
+    })
+  }
+})
 
 router.get("/users", authorize(...USER_MANAGEMENT_ROLES), async (req, res, next) => {
   try {

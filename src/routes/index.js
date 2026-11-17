@@ -10,6 +10,7 @@ import { segmentationRouter } from "./segmentation.routes.js";
 import { targetingRouter } from "./targeting.routes.js";
 import { operationsRouter } from "./operations.routes.js";
 import { systemRouter } from "./system.routes.js";
+import { whatsappWebhookRouter } from "./whatsappWebhook.routes.js";
 
 export const apiRouter = Router();
 
@@ -23,6 +24,9 @@ apiRouter.use("/imports", importRouter);
 apiRouter.use("/meta", metaRouter);
 apiRouter.use("/segmentation", segmentationRouter);
 apiRouter.use("/targeting", targetingRouter);
+// Meta calls this directly with its own verify-token handshake, so it
+// cannot sit behind our normal authenticate/authorize middleware.
+apiRouter.use("/webhooks/whatsapp", whatsappWebhookRouter);
 
 apiRouter.get("/", (req, res) => {
   res.json({

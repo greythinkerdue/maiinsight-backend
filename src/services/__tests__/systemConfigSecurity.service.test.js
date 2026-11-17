@@ -107,18 +107,43 @@ test("IT configuration response exposes the Gemini API key and Meta access token
 
 test("blank secret updates preserve stored values and new secrets replace them", () => {
   const blankUpdate = buildIntegrationSettingsUpdate(
-    { geminiApiKey: " ", metaAccessToken: "" },
+    { geminiApiKey: " ", metaAccessToken: "", whatsappAccessToken: "" },
     secretConfig
   )
   assert.equal(APP_SETTING_KEYS.GEMINI_API_KEY in blankUpdate, false)
   assert.equal(APP_SETTING_KEYS.META_ACCESS_TOKEN in blankUpdate, false)
+  assert.equal(APP_SETTING_KEYS.WHATSAPP_ACCESS_TOKEN in blankUpdate, false)
 
   const replacement = buildIntegrationSettingsUpdate(
-    { geminiApiKey: " new-gemini ", metaAccessToken: " new-meta " },
+    { geminiApiKey: " new-gemini ", metaAccessToken: " new-meta ", whatsappAccessToken: " new-whatsapp " },
     secretConfig
   )
   assert.equal(replacement[APP_SETTING_KEYS.GEMINI_API_KEY], "new-gemini")
   assert.equal(replacement[APP_SETTING_KEYS.META_ACCESS_TOKEN], "new-meta")
+  assert.equal(replacement[APP_SETTING_KEYS.WHATSAPP_ACCESS_TOKEN], "new-whatsapp")
+})
+
+test("WhatsApp integration is reported unconfigured until all three required fields are set", () => {
+  const status = buildSafeIntegrationStatus({
+    config: secretConfig,
+    aiProviderStatus: { configured: true, provider: "gemini", providerLabel: "Gemini", model: "gemini-2.5-flash" },
+  })
+  assert.equal(status.whatsapp.configured, false)
+  assert.equal(status.whatsapp.connected, false)
+
+  const configuredStatus = buildSafeIntegrationStatus({
+    config: {
+      ...secretConfig,
+      whatsappAccessToken: "wa-secret",
+      whatsappPhoneNumberId: "123456",
+      whatsappTemplateName: "fill_session_promo",
+      whatsappEnabled: true,
+    },
+    aiProviderStatus: { configured: true, provider: "gemini", providerLabel: "Gemini", model: "gemini-2.5-flash" },
+  })
+  assert.equal(configuredStatus.whatsapp.configured, true)
+  assert.equal(configuredStatus.whatsapp.connected, true)
+  assert.equal(JSON.stringify(configuredStatus).includes("wa-secret"), false)
 })
 
 test("system endpoint role policy allows safe status to Operational/IT and config only to IT", () => {

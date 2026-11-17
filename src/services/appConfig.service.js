@@ -9,6 +9,13 @@ export const APP_SETTING_KEYS = {
   META_ACCESS_TOKEN: "META_ACCESS_TOKEN",
   META_GRAPH_VERSION: "META_GRAPH_VERSION",
   META_ENABLED: "META_ENABLED",
+  WHATSAPP_PHONE_NUMBER_ID: "WHATSAPP_PHONE_NUMBER_ID",
+  WHATSAPP_ACCESS_TOKEN: "WHATSAPP_ACCESS_TOKEN",
+  WHATSAPP_BUSINESS_ACCOUNT_ID: "WHATSAPP_BUSINESS_ACCOUNT_ID",
+  WHATSAPP_TEMPLATE_NAME: "WHATSAPP_TEMPLATE_NAME",
+  WHATSAPP_TEMPLATE_LANGUAGE: "WHATSAPP_TEMPLATE_LANGUAGE",
+  WHATSAPP_GRAPH_VERSION: "WHATSAPP_GRAPH_VERSION",
+  WHATSAPP_ENABLED: "WHATSAPP_ENABLED",
 };
 
 const normalizeValue = (value) => {
@@ -50,6 +57,15 @@ export const buildConfigSnapshot = async () => {
     metaAccessToken: settings[APP_SETTING_KEYS.META_ACCESS_TOKEN] ?? env.metaAccessToken,
     metaGraphVersion: settings[APP_SETTING_KEYS.META_GRAPH_VERSION] ?? env.metaApiVersion ?? "v25.0",
     metaEnabled: (settings[APP_SETTING_KEYS.META_ENABLED] ?? "true") === "true",
+    whatsappPhoneNumberId: settings[APP_SETTING_KEYS.WHATSAPP_PHONE_NUMBER_ID] ?? env.whatsappPhoneNumberId,
+    whatsappAccessToken: settings[APP_SETTING_KEYS.WHATSAPP_ACCESS_TOKEN] ?? env.whatsappAccessToken,
+    whatsappBusinessAccountId:
+      settings[APP_SETTING_KEYS.WHATSAPP_BUSINESS_ACCOUNT_ID] ?? env.whatsappBusinessAccountId,
+    whatsappTemplateName: settings[APP_SETTING_KEYS.WHATSAPP_TEMPLATE_NAME] ?? env.whatsappTemplateName,
+    whatsappTemplateLanguage:
+      settings[APP_SETTING_KEYS.WHATSAPP_TEMPLATE_LANGUAGE] ?? env.whatsappTemplateLanguage ?? "id",
+    whatsappGraphVersion: settings[APP_SETTING_KEYS.WHATSAPP_GRAPH_VERSION] ?? env.whatsappApiVersion ?? "v25.0",
+    whatsappEnabled: (settings[APP_SETTING_KEYS.WHATSAPP_ENABLED] ?? "true") === "true",
   };
 };
 

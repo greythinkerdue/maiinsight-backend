@@ -211,7 +211,8 @@ offer_constraints.exactDiscountAllowed is false; recommend a category, value-add
 or an offer within separately approved promotion limits.
 
 Mandatory language and style:
-- Write every user-facing value in clear, natural, professional English.
+- Write every user-facing value in clear, natural, professional English, except whatsappMessage:
+  whatsappMessage must be natural, warm, casual Bahasa Indonesia that is ready to send on WhatsApp.
 - Established terms such as WhatsApp, KPI, segment labels, day/session labels from the context, Mini Soccer,
   and Basketball may keep their canonical form. Keep canonical keys and targetDirection values unchanged.
 - State the recommendation directly. Avoid academic language, introductions, repetition, and generic reasoning.
@@ -246,7 +247,8 @@ Use only observable conditions supported by the supplied context. All three KPI 
 must be English and measurable in MaiinSight. Keep targetDirection as increase, decrease, or maintain.
 Do not use offer redemption, WhatsApp/customer response, campaign conversion, or campaign attribution
 as evidence, a KPI, or a stop condition when its availability flag is not true. Do not invent thresholds.
-The whatsappMessage must be concise, persuasive, ready to send, and in English.
+The whatsappMessage must be concise, persuasive, ready to send, and written in natural Bahasa Indonesia
+(casual, respectful "Kak" tone). All other user-facing fields must stay in English.
 Combine related unavailable data into one concise dataLimitation statement.
 
 Keep business reasoning concise and professional.
@@ -313,11 +315,15 @@ const validateWordLimit = (value, field, limit) => {
 }
 
 const INDONESIAN_MARKERS = new Set([
-  "agar", "akan", "atau", "bagi", "booking", "dalam", "dan", "dapat", "data",
-  "dengan", "dihentikan", "dipilih", "hari", "hingga", "ini", "jam", "jika",
-  "kembali", "kepada", "lebih", "melalui", "memiliki", "meningkatkan", "pada",
-  "pelanggan", "pemesanan", "penawaran", "periode", "potensi", "sampai", "segmen",
-  "setelah", "strategi", "target", "tersedia", "tidak", "untuk", "yang",
+  "ada", "agar", "akan", "amankan", "atau", "bagi", "balas", "bareng", "bantu",
+  "berlaku", "bikin", "bisa", "booking", "dalam", "dan", "dapat", "data",
+  "dengan", "dihentikan", "dipilih", "favorit", "hari", "hemat", "hingga",
+  "hubungi", "ini", "ingin", "jadwal", "jam", "jika", "kak", "kakak", "kami",
+  "kapan", "kasih", "kembali", "kepada", "khusus", "lagi", "lebih", "melalui",
+  "memiliki", "meningkatkan", "mau", "pada", "paket", "pelanggan", "pemesanan",
+  "penawaran", "periode", "potensi", "saja", "sampai", "sebutkan", "segmen",
+  "setelah", "siap", "silakan", "strategi", "target", "terima", "tersedia",
+  "tidak", "untuk", "yang", "yuk",
 ])
 const ENGLISH_MARKERS = new Set([
   "and", "are", "because", "booking", "campaign", "customers", "data", "for",
@@ -341,6 +347,19 @@ const isClearlyIndonesian = (values) => {
   const indonesianCount = words.filter((word) => INDONESIAN_MARKERS.has(word)).length
   const englishCount = words.filter((word) => ENGLISH_MARKERS.has(word)).length
   return indonesianCount >= 4 && (englishCount === 0 || indonesianCount > englishCount * 2)
+}
+
+const validateWhatsappMessageLanguage = (message) => {
+  const words = String(message || "").toLowerCase().match(/\p{L}+/gu) || []
+  const indonesianCount = words.filter((word) => INDONESIAN_MARKERS.has(word)).length
+
+  if (isClearlyEnglish([message]) || indonesianCount === 0) {
+    throw createAiServiceError({
+      errorCode: "AI_RESPONSE_LANGUAGE_MISMATCH",
+      technicalMessage:
+        "whatsappMessage must be written in natural, casual Bahasa Indonesia, not English.",
+    })
+  }
 }
 
 const validateConciseOutput = (result) => {
@@ -378,7 +397,7 @@ const validateConciseOutput = (result) => {
   const primaryFields = [
     result.campaignObjective, result.suggestedOffer, result.offerReasoning,
     result.customerReasoning, result.followUpPlan, result.stopCondition,
-    result.expectedBusinessImpact, result.dataLimitation, result.whatsappMessage,
+    result.expectedBusinessImpact, result.dataLimitation,
   ]
   if (isClearlyIndonesian(primaryFields)) {
     throw createAiServiceError({
@@ -386,6 +405,8 @@ const validateConciseOutput = (result) => {
       technicalMessage: "Primary user-facing fields must be written in English.",
     })
   }
+
+  validateWhatsappMessageLanguage(result.whatsappMessage)
 }
 
 const unsupportedMetricRules = [

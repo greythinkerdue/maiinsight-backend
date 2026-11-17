@@ -30,6 +30,38 @@ const normalizeStoredStrategy = (strategy = {}) => ({
   dataLimitation: strategy.dataLimitation || null,
 })
 
+const parseStrategyId = (value) => {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    const error = new Error("strategyId must be a positive integer.")
+    error.statusCode = 400
+    error.errorCode = "INVALID_STRATEGY_ID"
+    throw error
+  }
+  return parsed
+}
+
+const APPROVAL_STATUSES = new Set(["approved", "rejected", "draft"])
+
+const serializeStrategySummary = (strategy) => ({
+  id: strategy.id,
+  provider: strategy.provider,
+  model: strategy.model,
+  generatedAt: strategy.generatedAt,
+  status: strategy.status || "draft",
+  approvedAt: strategy.approvedAt || null,
+  approvedByUserId: strategy.approvedByUserId || null,
+  targetSegmentKey: strategy.targetSegmentKey,
+  targetVenueKey: strategy.targetVenueKey,
+  targetSessionKey: strategy.targetSessionKey,
+  campaignObjectiveKey: strategy.campaignObjectiveKey,
+  analysisPeriodKey: strategy.analysisPeriodKey,
+  campaignObjective: strategy.strategy?.campaignObjective || null,
+  suggestedOffer: strategy.strategy?.suggestedOffer || null,
+  targetSegmentLabel:
+    strategy.strategy?.targetSegmentLabel || strategy.strategy?.targetCustomerGroup || null,
+})
+
 aiStrategyRouter.get(
   "/status",
   authenticate,
@@ -73,13 +105,6 @@ aiStrategyRouter.get(
   }
 );
 
-// A stored strategy is only meaningful to show as "the latest strategy" when
-// it was generated for the same context the user is currently looking at —
-// otherwise it silently misrepresents a different segment/venue/objective as
-// if it applied here. A query param that's *omitted* means the caller hasn't
-// been updated to send that dimension yet, so it isn't filtered on; a param
-// that's present (including "all") is matched exactly, treating "all"/empty
-// the same as the stored `null` used for an unscoped generation.
 const buildLatestStrategyScopeWhere = (query = {}) => {
   const where = {}
   const dimensions = [
@@ -121,6 +146,9 @@ aiStrategyRouter.get(
               targetSessionKey: stored.targetSessionKey,
               campaignObjectiveKey: stored.campaignObjectiveKey,
               analysisPeriodKey: stored.analysisPeriodKey,
+              status: stored.status || "draft",
+              approvedAt: stored.approvedAt || null,
+              approvedByUserId: stored.approvedByUserId || null,
               strategy: normalizeStoredStrategy(stored.strategy),
             }
           : null,
@@ -131,6 +159,120 @@ aiStrategyRouter.get(
         errorCode: "AI_STRATEGY_HISTORY_FAILED",
         message: "AI strategy history could not be loaded.",
         technicalMessage: error instanceof Error ? error.message : "Strategy history failed.",
+      })
+    }
+  }
+)
+
+aiStrategyRouter.get(
+  "/history",
+  authenticate,
+  authorize("operational", "management", "it_support"),
+  async (req, res) => {
+    try {
+      const limit = Math.max(1, Math.min(Number(req.query.limit) || 20, 50))
+      const strategies = await prisma.aiStrategy.findMany({
+        orderBy: { generatedAt: "desc" },
+        take: limit,
+        select: {
+          id: true,
+          provider: true,
+          model: true,
+          generatedAt: true,
+          status: true,
+          approvedAt: true,
+          approvedByUserId: true,
+          targetSegmentKey: true,
+          targetVenueKey: true,
+          targetSessionKey: true,
+          campaignObjectiveKey: true,
+          analysisPeriodKey: true,
+          strategy: true,
+        },
+      })
+
+      return res.json({
+        success: true,
+        data: {
+          strategies: strategies.map(serializeStrategySummary),
+        },
+      })
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        errorCode: "AI_STRATEGY_HISTORY_FAILED",
+        message: "AI strategy history could not be loaded.",
+        technicalMessage: error instanceof Error ? error.message : "Strategy history failed.",
+      })
+    }
+  }
+)
+
+aiStrategyRouter.patch(
+  "/:strategyId/approval",
+  authenticate,
+  authorize("operational", "management", "it_support"),
+  async (req, res) => {
+    try {
+      const strategyId = parseStrategyId(req.params.strategyId)
+      const status = String(req.body?.status || "").trim().toLowerCase()
+      if (!APPROVAL_STATUSES.has(status)) {
+        return res.status(400).json({
+          success: false,
+          errorCode: "INVALID_APPROVAL_STATUS",
+          message: "status must be approved, rejected, or draft.",
+        })
+      }
+
+      const existing = await prisma.aiStrategy.findUnique({ where: { id: strategyId } })
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          errorCode: "STRATEGY_NOT_FOUND",
+          message: "AI strategy not found.",
+        })
+      }
+
+      const approved = status === "approved"
+      const updated = await prisma.aiStrategy.update({
+        where: { id: strategyId },
+        data: {
+          status,
+          approvedAt: approved ? new Date() : null,
+          approvedByUserId: approved ? req.user.userId : null,
+        },
+      })
+
+      await logActivity(req, approved ? "AI_STRATEGY_APPROVED" : "AI_STRATEGY_DECISION_UPDATED", {
+        jobName: "AI Strategy Engine Sync",
+        strategyId,
+        status: approved ? "success" : "updated",
+        decision: status,
+        segmentKey: updated.targetSegmentKey,
+        venueKey: updated.targetVenueKey,
+        sessionKey: updated.targetSessionKey,
+        campaignObjectiveKey: updated.campaignObjectiveKey,
+        completedAt: new Date().toISOString(),
+      }).catch(() => null)
+
+      if (approved) {
+        await createNotificationsForRoles(prisma, ["operational", "management", "it_support"], {
+          title: "AI Strategy Approved",
+          message: "An AI strategy is approved and ready for execution.",
+        }).catch(() => null)
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          strategy: serializeStrategySummary(updated),
+        },
+      })
+    } catch (error) {
+      return res.status(error?.statusCode || 500).json({
+        success: false,
+        errorCode: error?.errorCode || "AI_STRATEGY_APPROVAL_FAILED",
+        message: error instanceof Error ? error.message : "Strategy approval could not be updated.",
       })
     }
   }
@@ -340,6 +482,8 @@ aiStrategyRouter.post(
           model: result.model,
           generatedAt,
           strategyId: storedStrategy.id,
+          status: storedStrategy.status || "draft",
+          approvedAt: null,
           strategy: result.strategy,
           context: serializeStrategyContextForClient(structuredContext),
         },

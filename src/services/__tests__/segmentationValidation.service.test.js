@@ -94,3 +94,51 @@ test("validateSegmentationCustomerInput rejects oversized page size", () => {
   )
 })
 
+test("validateSegmentationCustomerInput normalizes column filters and sorting", () => {
+  const input = validateSegmentationCustomerInput({
+    bookingTypeDominant: "manual walk-in",
+    recencyMin: "31",
+    recencyMax: "90",
+    frequencyMin: "2",
+    frequencyMax: "10",
+    monetaryMin: "150000.5",
+    monetaryMax: "2500000",
+    clusterFit: "mixed_borderline",
+    sortBy: "monetary",
+    sortDirection: "desc",
+  })
+
+  assert.equal(input.bookingTypeDominant, "Manual/Walk-in")
+  assert.equal(input.recencyMin, 31)
+  assert.equal(input.recencyMax, 90)
+  assert.equal(input.frequencyMin, 2)
+  assert.equal(input.frequencyMax, 10)
+  assert.equal(input.monetaryMin, 150000.5)
+  assert.equal(input.monetaryMax, 2500000)
+  assert.equal(input.clusterFit, "mixed_borderline")
+  assert.equal(input.sortBy, "monetary")
+  assert.equal(input.sortDirection, "desc")
+})
+
+test("validateSegmentationCustomerInput rejects unsupported sort and fit values", () => {
+  assert.throws(
+    () => validateSegmentationCustomerInput({ sortBy: "createdAt" }),
+    /sortBy must be customer, bookingType, recency, frequency, monetary, segment, clusterFit/
+  )
+
+  assert.throws(
+    () => validateSegmentationCustomerInput({ sortDirection: "sideways" }),
+    /sortDirection must be asc, desc/
+  )
+
+  assert.throws(
+    () => validateSegmentationCustomerInput({ clusterFit: "unknown" }),
+    /clusterFit must be representative, reassigned, mixed_borderline/
+  )
+
+  assert.throws(
+    () => validateSegmentationCustomerInput({ monetaryMin: "-1" }),
+    /monetaryMin must be a non-negative number/
+  )
+})
+
