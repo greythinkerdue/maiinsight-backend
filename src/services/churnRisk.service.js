@@ -240,11 +240,32 @@ export const buildSnapshotDates = ({
   const end = new Date(latestDate.getTime() - outcomeWindowDays * DAY_MS)
   if (start > end) return []
 
+  const totalSpanDays = (end.getTime() - start.getTime()) / DAY_MS
+  const uncappedCount = Math.floor(totalSpanDays / stepDays) + 1
+
+  if (uncappedCount <= maxSnapshots) {
+    const dates = []
+    let cursor = start
+    while (cursor <= end) {
+      dates.push(cursor)
+      cursor = new Date(cursor.getTime() + stepDays * DAY_MS)
+    }
+    return dates
+  }
+
+  // A fixed-size step over a long history would produce more points than
+  // maxSnapshots allows. Stopping early once the cap is hit (the previous
+  // behavior) clusters every snapshot near `start` and leaves nothing near
+  // `end` — exactly the recent history runChurnModelTraining's time-based
+  // test split needs, which silently produced zero test rows on long
+  // histories. Spacing maxSnapshots points evenly across the FULL
+  // [start, end] range instead guarantees coverage at both ends regardless
+  // of how long the history is.
+  const pointCount = Math.max(2, maxSnapshots)
+  const intervalDays = totalSpanDays / (pointCount - 1)
   const dates = []
-  let cursor = start
-  while (cursor <= end && dates.length < maxSnapshots) {
-    dates.push(cursor)
-    cursor = new Date(cursor.getTime() + stepDays * DAY_MS)
+  for (let index = 0; index < pointCount; index += 1) {
+    dates.push(new Date(start.getTime() + Math.round(index * intervalDays) * DAY_MS))
   }
   return dates
 }

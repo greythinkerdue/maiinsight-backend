@@ -125,6 +125,25 @@ test("buildSnapshotDates returns nothing when the history is too short to buffer
   assert.deepEqual(buildSnapshotDates({ earliestDate: utcDay(0), latestDate: utcDay(100) }), [])
 })
 
+test("buildSnapshotDates keeps covering recent history when a long history hits the snapshot cap", () => {
+  // A ~4.8-year history at a 30-day step would produce far more than
+  // MAX_SNAPSHOTS points. Stopping early once the cap is hit used to
+  // cluster every snapshot near the start and leave nothing in the most
+  // recent months — exactly the window runChurnModelTraining's time-based
+  // test split needs, which silently produced zero test rows.
+  const earliestDate = utcDay(0)
+  const latestDate = utcDay(1765) // ~4.8 years later
+  const dates = buildSnapshotDates({ earliestDate, latestDate })
+  const outcomeWindowDays = 90
+  const testSplitLookbackDays = 180
+  const end = new Date(latestDate.getTime() - outcomeWindowDays * 86400000)
+  const splitDate = new Date(latestDate.getTime() - testSplitLookbackDays * 86400000)
+
+  assert.equal(dates.length, 36)
+  assert.ok(dates[dates.length - 1].getTime() >= end.getTime() - 86400000)
+  assert.ok(dates.some((date) => date.getTime() >= splitDate.getTime()))
+})
+
 test("buildChurnDataset sweeps every timeline across every snapshot date, skipping ineligible rows", () => {
   const timelines = [
     {
