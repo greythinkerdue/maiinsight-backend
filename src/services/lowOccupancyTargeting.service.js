@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma.js"
 import { buildCourtHourUsageWhere, EXCLUDED_IMPORT_BATCH_FILE_NAMES, getCourtCount } from "./dashboardPeriod.service.js"
 import { buildEmptySlotHeatmap } from "./emptySlotHeatmap.service.js"
+import { forecastNextValue } from "./occupancyForecast.service.js"
 import {
   CANONICAL_TRANSACTION_STATUSES,
   DASHBOARD_TRANSACTION_GROUPS,
@@ -790,6 +791,73 @@ export const getOccupancyBaseline = async ({
   }
 }
 
+/**
+ * Chronological per-occurrence occupancy series for the same weekday +
+ * session + court type as campaignDate, oldest first — the raw time series
+ * occupancyForecast.service.js forecasts from. Same query/grouping as
+ * getOccupancyBaseline above, but kept as one point per historical week
+ * instead of collapsed into a single flat average, so a forecaster can see
+ * trend, not just level.
+ */
+export const getWeeklyOccupancySeries = async ({
+  campaignDate,
+  sessionName,
+  courtType = "all",
+  weeks = 12,
+}) => {
+  const session = getSessionDefinitionByName(sessionName)
+  if (!session) return []
+
+  const { date } = buildCampaignDateBounds(campaignDate)
+  const campaignDayIndex = date.getDay()
+  const safeWeeks = Math.max(1, Math.min(Number(weeks) || 12, 26))
+  const start = startOfDay(new Date(date.getTime() - safeWeeks * 7 * 86400000))
+  const endExclusive = new Date(startOfDay(date).getTime())
+  const courtCount = getCourtCount(courtType === "all" ? null : courtType)
+
+  const rows = await prisma.courtHourUsage.findMany({
+    where: {
+      playDate: { gte: start, lt: endExclusive },
+      ...(courtType === "all" ? {} : { courtType }),
+      transaction: {
+        batch: {
+          fileName: {
+            notIn: EXCLUDED_IMPORT_BATCH_FILE_NAMES,
+          },
+        },
+      },
+    },
+    select: {
+      playDate: true,
+      courtHourKey: true,
+      hourStart: true,
+      transaction: {
+        select: {
+          status: true,
+          validBooking: true,
+        },
+      },
+    },
+  })
+
+  const rowsByDate = new Map()
+  for (const row of rows) {
+    const rowDate = startOfDay(row.playDate)
+    if (rowDate.getDay() !== campaignDayIndex) continue
+    const key = formatIsoDate(rowDate)
+    const bucket = rowsByDate.get(key) || []
+    bucket.push(row)
+    rowsByDate.set(key, bucket)
+  }
+
+  return [...rowsByDate.entries()]
+    .sort(([leftDate], [rightDate]) => (leftDate < rightDate ? -1 : 1))
+    .map(([weekDate, sampleRows]) => ({
+      date: weekDate,
+      ...summarizeUsageRows({ rows: sampleRows, session, courtCount }),
+    }))
+}
+
 export const buildAudienceCoverage = ({
   audienceSize,
   slotAvailability,
@@ -965,7 +1033,7 @@ export const getRecommendedCustomers = async ({
 
   const latestPlayDate = await getLatestCampaignPlayDate(prisma)
   if (!latestPlayDate) {
-    return { campaignDay, analysisPeriodMonths, latestPlayDate: null, unavailableReason: "LATEST_PLAY_DATE_NOT_AVAILABLE", monthlyPerformance: [], historicalSummary: null, courtType, sessionName, segmentName, customerType, campaignDate: normalizedCampaignDate, historyLookbackMonths: CAMPAIGN_HISTORY_LOOKBACK_MONTHS, slotAvailability: null, audienceCoverage: null, customers: [], totalCustomers: 0, pagination: { limit, offset, returned: 0, totalCustomers: 0, hasMore: false } }
+    return { campaignDay, analysisPeriodMonths, latestPlayDate: null, unavailableReason: "LATEST_PLAY_DATE_NOT_AVAILABLE", monthlyPerformance: [], historicalSummary: null, courtType, sessionName, segmentName, customerType, campaignDate: normalizedCampaignDate, historyLookbackMonths: CAMPAIGN_HISTORY_LOOKBACK_MONTHS, slotAvailability: null, audienceCoverage: null, occupancyForecast: null, customers: [], totalCustomers: 0, pagination: { limit, offset, returned: 0, totalCustomers: 0, hasMore: false } }
   }
   const { analysisStart, analysisEnd } = buildCampaignAnalysisRange(
     latestPlayDate,
@@ -1208,6 +1276,25 @@ export const getRecommendedCustomers = async ({
       })
     : null
 
+  const occupancyForecast = normalizedCampaignDate
+    ? forecastNextValue(
+        await getWeeklyOccupancySeries({
+          campaignDate: normalizedCampaignDate,
+          sessionName,
+          courtType,
+        })
+      )
+    : {
+        available: false,
+        forecastOccupancyRate: null,
+        trendPerWeek: null,
+        confidenceBandLow: null,
+        confidenceBandHigh: null,
+        historicalWeeks: 0,
+        method: null,
+        reason: "Select a campaign date to compute an occupancy forecast.",
+      }
+
   const result = {
     campaignDay, analysisPeriodMonths, latestPlayDate: selectedDate, unavailableReason: null,
     courtType,
@@ -1218,6 +1305,7 @@ export const getRecommendedCustomers = async ({
     historyLookbackMonths: CAMPAIGN_HISTORY_LOOKBACK_MONTHS,
     slotAvailability,
     audienceCoverage,
+    occupancyForecast,
     customers: pagedCustomers,
     totalCustomers: rankedCustomers.length,
     monthlyPerformance,
