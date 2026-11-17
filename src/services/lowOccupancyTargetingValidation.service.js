@@ -13,6 +13,7 @@ const ALLOWED_SEGMENT_NAMES = new Set([
 ])
 const ALLOWED_CAMPAIGN_DAYS = new Set(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
 const ALLOWED_ANALYSIS_MONTHS = new Set([1, 2, 3, 4, 6, 12])
+const ALLOWED_PRIORITY_LABELS = new Set(["High Priority", "Medium Priority", "Low Priority"])
 const ALLOWED_CUSTOMER_TYPE_LABELS = new Set(["Membership", "Non Membership", "Mixed/Other"])
 
 const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== ""
@@ -133,6 +134,17 @@ export const validateRecommendedCustomersInput = (input = {}) => ({
     minimum: 0,
     fallback: 0,
   }),
+  search: hasValue(input.search) ? String(input.search).trim().slice(0, 120) : null,
+  priorityLabel: (() => {
+    if (!hasValue(input.priorityLabel)) return null
+    const normalized = String(input.priorityLabel).trim()
+    if (!ALLOWED_PRIORITY_LABELS.has(normalized)) {
+      throw badRequest(`priorityLabel must be one of: ${[...ALLOWED_PRIORITY_LABELS].join(", ")}.`)
+    }
+    return normalized
+  })(),
+  avgSpendMin: normalizeDecimal(input.avgSpendMin, "avgSpendMin", { minimum: 0, fallback: null }),
+  avgSpendMax: normalizeDecimal(input.avgSpendMax, "avgSpendMax", { minimum: 0, fallback: null }),
 })
 
 const normalizeRequiredText = (value, fieldName, { maxLength = 200 } = {}) => {

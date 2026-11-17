@@ -36,7 +36,33 @@ test("validateRecommendedCustomersInput normalizes valid query params", () => {
       campaignDate: null,
       limit: 25,
       offset: 5,
+      search: null,
+      priorityLabel: null,
+      avgSpendMin: null,
+      avgSpendMax: null,
     }
+  )
+})
+
+test("validateRecommendedCustomersInput normalizes the table-filter params", () => {
+  const result = validateRecommendedCustomersInput({
+    sessionName: "Morning",
+    search: "  Budi  ",
+    priorityLabel: "High Priority",
+    avgSpendMin: "100000",
+    avgSpendMax: "500000",
+  })
+
+  assert.equal(result.search, "Budi")
+  assert.equal(result.priorityLabel, "High Priority")
+  assert.equal(result.avgSpendMin, 100000)
+  assert.equal(result.avgSpendMax, 500000)
+})
+
+test("validateRecommendedCustomersInput rejects an unsupported priorityLabel", () => {
+  assert.throws(
+    () => validateRecommendedCustomersInput({ sessionName: "Morning", priorityLabel: "Urgent" }),
+    /priorityLabel must be one of/
   )
 })
 

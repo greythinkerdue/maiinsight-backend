@@ -1015,6 +1015,10 @@ export const getRecommendedCustomers = async ({
   limit = 50,
   offset = 0,
   campaignDate = null,
+  search = null,
+  priorityLabel = null,
+  avgSpendMin = null,
+  avgSpendMax = null,
 }) => {
   const normalizedCampaignDate = campaignDate ? String(campaignDate).slice(0, 10) : null
   const cacheKey = buildRecommendationCacheKey({
@@ -1027,6 +1031,10 @@ export const getRecommendedCustomers = async ({
     limit,
     offset,
     campaignDate: normalizedCampaignDate,
+    search,
+    priorityLabel,
+    avgSpendMin,
+    avgSpendMax,
   })
   const cached = readRecommendationCache(cacheKey)
   if (cached) return cached
@@ -1209,7 +1217,21 @@ export const getRecommendedCustomers = async ({
       )
     })
 
-  const pagedCustomers = rankedCustomers.slice(offset, offset + limit)
+  // UI-only table filters (search/priority/spend), applied after ranking so
+  // audienceCoverage below still reflects the full recommended audience —
+  // narrowing what's displayed should never change the campaign-sizing math.
+  const filteredRankedCustomers = rankedCustomers.filter((customer) => {
+    if (search) {
+      const haystack = `${customer.customerName || ""} ${customer.customerKey}`.toLowerCase()
+      if (!haystack.includes(search.toLowerCase())) return false
+    }
+    if (priorityLabel && customer.targetPriorityLabel !== priorityLabel) return false
+    if (avgSpendMin != null && customer.avgSpend < avgSpendMin) return false
+    if (avgSpendMax != null && customer.avgSpend > avgSpendMax) return false
+    return true
+  })
+
+  const pagedCustomers = filteredRankedCustomers.slice(offset, offset + limit)
 
   const capacityCourtCount = courtType === "all" ? 2 : 1
   const allUsage = await prisma.courtHourUsage.findMany({
@@ -1307,15 +1329,15 @@ export const getRecommendedCustomers = async ({
     audienceCoverage,
     occupancyForecast,
     customers: pagedCustomers,
-    totalCustomers: rankedCustomers.length,
+    totalCustomers: filteredRankedCustomers.length,
     monthlyPerformance,
     historicalSummary,
     pagination: {
       limit,
       offset,
       returned: pagedCustomers.length,
-      totalCustomers: rankedCustomers.length,
-      hasMore: offset + pagedCustomers.length < rankedCustomers.length,
+      totalCustomers: filteredRankedCustomers.length,
+      hasMore: offset + pagedCustomers.length < filteredRankedCustomers.length,
     },
   }
 
