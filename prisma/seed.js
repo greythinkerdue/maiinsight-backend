@@ -1,11 +1,54 @@
 import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { seedUsers } from "../src/services/seedUsers.service.js";
 
 const prisma = new PrismaClient();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Loads a static InstaSight snapshot (exported once from a dev database) so
+// this environment shows real historical Instagram performance data without
+// needing a live Meta access token. Safe to run on every boot: every write
+// below is an upsert or a skip-duplicates createMany.
+const seedInstasightSnapshot = async (database) => {
+  const snapshotPath = path.join(__dirname, "instasight-snapshot.json");
+  if (!fs.existsSync(snapshotPath)) return;
+
+  const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
+  const { account, media, mediaInsights, snapshots, accountInsights, audienceInsights, monthlyPerformance } = snapshot;
+
+  if (account) {
+    await database.instagramAccount.upsert({
+      where: { id: account.id },
+      update: account,
+      create: account,
+    });
+  }
+  if (snapshots?.length) {
+    await database.instagramAccountSnapshot.createMany({ data: snapshots, skipDuplicates: true });
+  }
+  if (media?.length) {
+    await database.instagramMedia.createMany({ data: media, skipDuplicates: true });
+  }
+  if (mediaInsights?.length) {
+    await database.instagramMediaInsight.createMany({ data: mediaInsights, skipDuplicates: true });
+  }
+  if (accountInsights?.length) {
+    await database.instagramAccountInsight.createMany({ data: accountInsights, skipDuplicates: true });
+  }
+  if (audienceInsights?.length) {
+    await database.instagramAudienceInsight.createMany({ data: audienceInsights, skipDuplicates: true });
+  }
+  if (monthlyPerformance?.length) {
+    await database.instagramMonthlyMediaPerformance.createMany({ data: monthlyPerformance, skipDuplicates: true });
+  }
+};
 
 async function main() {
   await seedUsers(prisma);
+  await seedInstasightSnapshot(prisma);
 
   const appSettings = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
