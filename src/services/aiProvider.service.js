@@ -542,16 +542,26 @@ export const validateStrategyResponse = (result, context) => {
         technicalMessage: `targetSessionKey must be ${primaryOffPeakWindow.sessionKey}.`,
       })
     }
-    const requiredWindowLabels = [
-      primaryOffPeakWindow.dayLabel,
-      primaryOffPeakWindow.sessionLabel,
-    ].map((value) => String(value || "").toLowerCase())
+    // campaignObjective/suggestedOffer are written in English (per the prompt's
+    // mandatory-language rule), so accept either the Indonesian canonical label
+    // (dayLabel/sessionLabel, e.g. "Selasa"/"Siang") or its English day/session
+    // key (dayKey/sessionKey, e.g. "tuesday"/"afternoon") — requiring only the
+    // Indonesian form rejected every valid English response.
+    const requiredWindowLabelGroups = [
+      [primaryOffPeakWindow.dayLabel, primaryOffPeakWindow.dayKey],
+      [primaryOffPeakWindow.sessionLabel, primaryOffPeakWindow.sessionKey],
+    ].map((group) => group.map((value) => String(value || "").toLowerCase()).filter(Boolean))
     for (const [field, value] of [
       ["campaignObjective", result.campaignObjective],
       ["suggestedOffer", result.suggestedOffer],
     ]) {
       const normalizedValue = String(value || "").toLowerCase()
-      if (requiredWindowLabels.some((label) => label && !normalizedValue.includes(label))) {
+      if (
+        requiredWindowLabelGroups.some(
+          (alternatives) =>
+            alternatives.length && !alternatives.some((label) => normalizedValue.includes(label))
+        )
+      ) {
         throw createAiServiceError({
           errorCode: "AI_INVALID_RESPONSE",
           technicalMessage: `${field} must identify the calculated primary off-peak day and session.`,
