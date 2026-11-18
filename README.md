@@ -16,6 +16,9 @@ Node.js · Express · MySQL · Prisma · K-Means++ · Logistic Regression · Two
 
 ---
 
+![Churn risk model output](./docs/screenshots/churn-risk.png)
+*The `churnRisk.service.js` model's output as rendered by the frontend — AUC, precision/recall, and a naive-baseline comparison so the metric can't be misread.*
+
 ## ✨ Overview
 
 This is the **API and data-science engine** behind MaiinSight, a marketing decision-support platform for **Maiin Gandaria**, a multi-court sports venue business. It owns the database, every statistical/ML model, and the integrations (Gemini, Meta Graph API, WhatsApp Business Cloud API) that turn raw booking data into campaign decisions.
