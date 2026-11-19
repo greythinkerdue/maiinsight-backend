@@ -310,12 +310,12 @@ test("name fallback is exact, identifier-free, and refuses ambiguous matches", a
   assert.notEqual(differentName.transactions[0].customerId, 1)
 
   seedCustomer(database, { id: 3, customerIdentity: "NAME|KAYLA-SECOND", customerKey: "CUST-00003", name: "KAYLA", email: null })
-  await assert.rejects(
-    resolveCustomersForTransactions(database, [
-      buildTransaction({ customerIdentity: "NAME|KAYLA", normalizedEmail: null, normalizedPhone: null, customerName: "Kayla" }),
-    ]),
-    (error) => error.errorCode === "CUSTOMER_NAME_AMBIGUOUS"
-  )
+  const ambiguous = await resolveCustomersForTransactions(database, [
+    buildTransaction({ customerIdentity: "NAME|KAYLA", normalizedEmail: null, normalizedPhone: null, customerName: "Kayla" }),
+  ])
+  assert.equal(ambiguous.errors.length, 1)
+  assert.equal(ambiguous.errors[0].errorCode, "CUSTOMER_NAME_AMBIGUOUS")
+  assert.equal(ambiguous.transactions[0].customerId, null)
 })
 
 test("same-batch candidates fill identifiers and detect cross-customer conflict before persistence", async () => {
@@ -380,16 +380,16 @@ test("name filling preserves strong-identifier precedence and exact-name ambigui
   assert.equal(emailMatched.transactions[0].customerId, 1)
   assert.equal(database.customers.get("EMAIL|test@example.com").name, "Kayla")
 
-  await assert.rejects(
-    resolveCustomersForTransactions(database, [
-      buildTransaction({
-        customerIdentity: "NAME|KAYLA",
-        normalizedEmail: null,
-        normalizedPhone: null,
-        normalizedName: "KAYLA",
-        customerName: "Kayla",
-      }),
-    ]),
-    (error) => error.errorCode === "CUSTOMER_NAME_AMBIGUOUS"
-  )
+  const ambiguous = await resolveCustomersForTransactions(database, [
+    buildTransaction({
+      customerIdentity: "NAME|KAYLA",
+      normalizedEmail: null,
+      normalizedPhone: null,
+      normalizedName: "KAYLA",
+      customerName: "Kayla",
+    }),
+  ])
+  assert.equal(ambiguous.errors.length, 1)
+  assert.equal(ambiguous.errors[0].errorCode, "CUSTOMER_NAME_AMBIGUOUS")
+  assert.equal(ambiguous.transactions[0].customerId, null)
 })

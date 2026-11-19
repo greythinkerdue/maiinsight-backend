@@ -11,8 +11,11 @@ test("Meta sync RBAC remains restricted to operational and IT support", () => {
 });
 
 test("Meta sync failure remains a retryable response and does not expose credentials", () => {
-  assert.match(syncRoute, /errorCode: "META_SYNC_FAILED"/);
-  assert.match(syncRoute, /suggestion: "Please check the Meta connection and try again\."/);
+  // Generic failures stay retryable; an expired-token failure gets its own code/suggestion
+  // so System Settings can point the user at the fix instead of a generic retry.
+  assert.match(syncRoute, /errorCode: isTokenExpired \? "META_TOKEN_EXPIRED" : "META_SYNC_FAILED"/);
+  assert.match(syncRoute, /: "Please check the Meta connection and try again\."/);
+  assert.match(syncRoute, /"Generate a new access token from Meta Graph API Explorer and update it in System Settings/);
   assert.doesNotMatch(syncRoute, /metaAccessToken|META_ACCESS_TOKEN/);
 });
 

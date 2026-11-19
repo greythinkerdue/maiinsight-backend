@@ -62,33 +62,26 @@ export const buildCustomerUpsertCandidates = (transactions = []) => {
   return [...candidateByIdentity.values()]
 }
 
-const createIdentityError = ({ errorCode, rowNumber, column, message, suggestion }) => {
-  const error = new Error(message)
-  error.errorCode = errorCode
-  error.suggestion = suggestion
-  error.technicalMessage = `${errorCode} at source row ${rowNumber}.`
-  error.validationErrors = [{ rowNumber, column, message }]
-  return error
-}
+// Row-level conflicts are recoverable: the batch keeps importing every other row, and the
+// caller (import routes) surfaces these as per-row validation errors so the user can fix just
+// the offending rows and re-import, instead of one bad row aborting a multi-thousand-row file.
+const identityConflict = (rowNumber, column, message) => ({
+  rowNumber,
+  column,
+  errorCode: "CUSTOMER_IDENTITY_CONFLICT",
+  message:
+    message ||
+    "Customer identity could not be resolved because the email and phone number match different customer records.",
+  suggestion: "Please verify the email and phone number in the source transaction file.",
+})
 
-const identityConflict = (rowNumber, column) =>
-  createIdentityError({
-    errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-    rowNumber,
-    column,
-    message:
-      "Customer identity could not be resolved because the email and phone number match different customer records.",
-    suggestion: "Please verify the email and phone number in the source transaction file.",
-  })
-
-const ambiguousName = (rowNumber) =>
-  createIdentityError({
-    errorCode: "CUSTOMER_NAME_AMBIGUOUS",
-    rowNumber,
-    column: "Customer Name",
-    message: "Customer identity could not be resolved because the name matches multiple customer records.",
-    suggestion: "Please add a verified email address or phone number to the source transaction row.",
-  })
+const ambiguousName = (rowNumber) => ({
+  rowNumber,
+  column: "Customer Name",
+  errorCode: "CUSTOMER_NAME_AMBIGUOUS",
+  message: "Customer identity could not be resolved because the name matches multiple customer records.",
+  suggestion: "Please add a verified email address or phone number to the source transaction row.",
+})
 
 const addToIndex = (index, value, customer) => {
   if (!value) return
@@ -265,6 +258,7 @@ export const resolveCustomersForTransactions = async (database, transactions = [
     const normalizedName = normalizeCustomerName(
       transaction.normalizedName ?? transaction.customerName ?? transaction.nama
     )
+    let transactionHasError = false
 
     // Determine email match, but treat unreliable emails as absent
     let emailMatch = null
@@ -288,21 +282,21 @@ export const resolveCustomersForTransactions = async (database, transactions = [
       } else if (nameMatched.length === 0) {
         // No name match among the candidates → treat phone as unreliable for this row
         phoneMatch = null
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Phone",
-          message: "Phone number matches multiple customer records and does not match the transaction name.",
-          errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-        })
+        transactionHasError = true
+        rowErrors.push(identityConflict(
+          transaction.rowNumber,
+          "Phone",
+          "Phone number matches multiple customer records and does not match the transaction name."
+        ))
       } else {
         // Multiple name matches → also unreliable
         phoneMatch = null
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Phone",
-          message: "Phone number matches multiple customer records with different names.",
-          errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-        })
+        transactionHasError = true
+        rowErrors.push(identityConflict(
+          transaction.rowNumber,
+          "Phone",
+          "Phone number matches multiple customer records with different names."
+        ))
       }
     }
 
@@ -313,20 +307,20 @@ export const resolveCustomersForTransactions = async (database, transactions = [
         emailMatch = nameMatched[0]
       } else if (nameMatched.length === 0) {
         emailMatch = null
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Email",
-          message: "Email address matches multiple customer records and does not match the transaction name.",
-          errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-        })
+        transactionHasError = true
+        rowErrors.push(identityConflict(
+          transaction.rowNumber,
+          "Email",
+          "Email address matches multiple customer records and does not match the transaction name."
+        ))
       } else {
         emailMatch = null
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Email",
-          message: "Email address matches multiple customer records with different names.",
-          errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-        })
+        transactionHasError = true
+        rowErrors.push(identityConflict(
+          transaction.rowNumber,
+          "Email",
+          "Email address matches multiple customer records with different names."
+        ))
       }
     }
 
@@ -335,12 +329,8 @@ export const resolveCustomersForTransactions = async (database, transactions = [
     if (Array.isArray(emailMatch) || Array.isArray(phoneMatch)) {
       // Already handled above with name-priority; if still array, record error
       if (!rowErrors.some(e => e.rowNumber === transaction.rowNumber)) {
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Email, Phone",
-          message: "Customer identity could not be resolved because the email and phone number match different customer records.",
-          errorCode: "CUSTOMER_IDENTITY_CONFLICT",
-        })
+        transactionHasError = true
+        rowErrors.push(identityConflict(transaction.rowNumber, "Email, Phone"))
       }
     }
 
@@ -349,12 +339,8 @@ export const resolveCustomersForTransactions = async (database, transactions = [
     if (!customer && !email && !phone && normalizedName) {
       const nameMatches = nameIndex.get(normalizedName) || []
       if (nameMatches.length > 1) {
-        rowErrors.push({
-          rowNumber: transaction.rowNumber,
-          column: "Customer Name",
-          message: "Customer identity could not be resolved because the name matches multiple customer records.",
-          errorCode: "CUSTOMER_NAME_AMBIGUOUS",
-        })
+        transactionHasError = true
+        rowErrors.push(ambiguousName(transaction.rowNumber))
       } else if (nameMatches.length === 1) {
         customer = nameMatches[0]
       }
@@ -370,6 +356,13 @@ export const resolveCustomersForTransactions = async (database, transactions = [
       customerProfile: normalizeProfileValue(transaction.customerProfile),
       customerKeyType: transaction.customerKeyType || "unknown",
       customerKeyConfidence: normalizeConfidenceValue(transaction.customerKeyConfidence),
+    }
+
+    if (transactionHasError) {
+      // A conflict/ambiguity was recorded for this row — leave it unresolved rather than
+      // silently fabricating or merging into a customer from untrustworthy data.
+      resolutionByTransaction.set(transaction, null)
+      continue
     }
 
     if (!customer) {
@@ -390,9 +383,10 @@ export const resolveCustomersForTransactions = async (database, transactions = [
     resolutionByTransaction.set(transaction, customer)
   }
 
-  // Persist customers
+  // Persist customers (skip rows that were left unresolved because of a recorded row error)
   const persistedByWorkingCustomer = new Map()
   for (const candidate of new Set(resolutionByTransaction.values())) {
+    if (!candidate) continue
     const persisted = await resolveCustomer(database, candidate)
     persistedByWorkingCustomer.set(candidate, persisted)
   }
