@@ -937,7 +937,7 @@ metaRouter.get(
       const campaigns = data.campaigns.map((campaign) => ({ ...campaign, insight: insightMap.get(campaign.internalKey) || null }))
       return res.json({ success: true, message: "Campaign attribution fetched successfully.", data: { campaigns, period: data.period, totalCustomers: data.totalCustomers } })
     } catch (error) {
-      return res.status(500).json({ success: false, errorCode: "CAMPAIGN_ATTRIBUTION_FAILED", message: "Campaign attribution could not be loaded.", suggestion: "Please run the campaign attribution sync and try again." })
+      return res.status(500).json({ success: false, errorCode: "CAMPAIGN_ATTRIBUTION_FAILED", message: "Campaign attribution could not be loaded.", suggestion: "Please run the campaign attribution sync and try again.", technicalMessage: error instanceof Error ? error.message : "Campaign attribution failed." })
     }
   }
 );

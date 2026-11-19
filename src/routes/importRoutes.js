@@ -59,33 +59,6 @@ const upload = multer({
     );
   },
 });
-const createFailedImportHistory = async ({
-  fileName,
-  rowCount = 0,
-  headers = [],
-  message,
-  errorCode = null,
-  suggestion = null,
-  validationErrors = null,
-  performedByUserId = null,
-}) => {
-  if (!fileName) return null;
-
-  return prisma.importBatch.create({
-    data: {
-      fileName,
-      rowCount,
-      headers,
-      status: "failed",
-      errorMessage: message || "Import failed.",
-      errorCode,
-      errorSuggestion: suggestion,
-      validationErrors: validationErrors?.length ? validationErrors : null,
-      performedByUserId,
-    },
-  });
-};
-
 const handleImportUpload = (req, res, next) => {
   upload.single("file")(req, res, (error) => {
     if (!error) {
@@ -907,7 +880,7 @@ router.post(
             summary.errors.push({
               transactionId: tx ? tx.id : e.rowNumber,
               rowNumber: e.rowNumber,
-              batchId: batchId,
+              batchId: tx ? tx.batchId : null,
               message: e.message,
             });
           });

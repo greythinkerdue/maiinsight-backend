@@ -1,0 +1,17 @@
+-- This migration is intentionally a no-op.
+--
+-- Its name implied adding `decision`/`decisionNote` columns to ai_strategies, but that
+-- design was abandoned before this file was ever filled in (confirmed by git history:
+-- it was committed empty from the start, which is what made `prisma migrate deploy`
+-- fail on any database that hadn't already had it manually marked as applied -- i.e.
+-- any fresh environment, including CI). Approve/reject ended up being covered by the
+-- `status` + `approvedAt` + `approvedByUserId` columns added in
+-- add_outreach_and_strategy_approval instead.
+--
+-- The long-running dev database still has two leftover `decision`/`decisionNote`
+-- columns from that abandoned attempt (applied by hand outside migration tracking, then
+-- marked as applied here via `prisma migrate resolve`). Nothing in this codebase reads
+-- or writes them. They aren't dropped here: this file is already marked applied on
+-- that database and will never run there again, so cleaning them up needs a new
+-- migration, not this one.
+SELECT 1;
