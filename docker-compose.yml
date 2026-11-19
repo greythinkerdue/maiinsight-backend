@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  mysql:
+  db:
     image: mysql:8.0
     container_name: maiinsight-mysql
     environment:
@@ -10,14 +10,57 @@ services:
       MYSQL_USER: maiinsight_app
       MYSQL_PASSWORD: Maiinsight_26
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 20s
       retries: 10
       interval: 10s
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: maiinsight-phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+    container_name: maiinsight-backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql://maiinsight_app:Maiinsight_26@db:3306/maiinsight_db
+    ports:
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Lives in the sibling maiinsight-frontend repo, not this one — both repos share this one
+  # compose file for local full-stack dev since they're deployed as two separate apps.
+  frontend:
+    build:
+      context: ../maiinsight-frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:5000
+    container_name: maiinsight-frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
-  mysql_data:
+  mysql-data:

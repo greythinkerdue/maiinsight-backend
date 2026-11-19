@@ -2,8 +2,9 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
 
+// Path is relative to this test file: __tests__ -> services -> src -> repo root.
 const compose = await readFile(
-  new URL("../../../../docker-compose.mysql.yml", import.meta.url),
+  new URL("../../../docker-compose.yml", import.meta.url),
   "utf8"
 )
 
